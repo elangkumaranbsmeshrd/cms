@@ -419,6 +419,33 @@ async def main() -> None:
     async with AsyncSessionLocal() as db:
         await reseed(db)
     await row_counts()
+
+    # wipe() above deletes parent rows with FOREIGN_KEY_CHECKS=0, which is the
+    # only way to empty a Masters table whose children still reference it — but
+    # it means every row that pointed at a wiped row is now pointing at an id
+    # that no longer exists. reseed() creates the replacements with NEW uuids,
+    # so nothing reconnects on its own.
+    #
+    # That damage is invisible: MySQL will not let you CREATE an orphan, so
+    # inserts keep working and the schema still looks healthy. The only symptom
+    # is at read time — the Employee Directory printing a raw UUID under
+    # Department was this, and it went unnoticed long enough that ~30 foreign
+    # keys and every employee row were affected before anyone traced it.
+    #
+    # So the audit runs here, unconditionally, and says so loudly. It only
+    # reports; deciding what a NOT NULL orphan should become is not something
+    # this script can do for you.
+    print("\n=== Foreign-key integrity after wipe+reseed ===")
+    from orphan_audit import audit  # local import: same scripts/ dir, only needed here
+
+    if await audit():
+        print(
+            "\n!! This wipe left orphaned references behind. They will render as 'Unknown'\n"
+            "!! in the UI. Repair the nullable ones with:\n"
+            "!!     .venv\\Scripts\\python.exe scripts\\orphan_audit.py --repair\n"
+            "!! and decide explicitly what to do about any NOT NULL ones listed above."
+        )
+
     print("\nDone. Tax tables (tax_schemes, tax_heads, and its 4 child tables) are empty on purpose.")
 
 

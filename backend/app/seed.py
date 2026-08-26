@@ -11,6 +11,7 @@ fresh here.
 
 import asyncio
 import uuid
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
@@ -538,6 +539,114 @@ SEED_EMAIL_TEMPLATES = [
 ]
 
 
+async def _seed_demo_employees(db) -> None:
+    """Give each of the five demo logins the Employee record the self-service
+    baseline requires. See the call site for why this exists and why it skips
+    rather than fails.
+
+    Reporting lines mirror the roles: everyone reports to the Super Admin's own
+    employee record, which reports to nobody. That is enough for the approval
+    routing in Leave §2.2 and Expense §2.4 to have a real manager to route to —
+    the previous state, every Reporting Manager blank, made those flows
+    untestable through the UI.
+    """
+    from app.models.employee import Employee
+    from app.models.masters import Department, Designation, EmploymentType
+    from app.models.numbering import FinancialYear
+
+    # (email, first, last, department, designation, employment type)
+    DEMO_EMPLOYEES = [
+        ("superadmin@meshrd.in", "Ravi", "Shankar", "Engineering", "Founder & CEO", "Full Time"),
+        ("manager@meshrd.in", "Vikram", "Iyer", "Engineering", "Engineering Manager", "Full Time"),
+        ("accountant@meshrd.in", "Nisha", "Kulkarni", "Finance", "Accountant", "Full Time"),
+        ("hr@meshrd.in", "Fatima", "Sheikh", "Human Resources", "HR Manager", "Full Time"),
+        ("employee@meshrd.in", "Arun", "Menon", "Engineering", "Software Engineer", "Full Time"),
+    ]
+
+    fy = (await db.execute(select(FinancialYear).order_by(FinancialYear.label))).scalars().first()
+    departments = {d.name: d.id for d in (await db.execute(select(Department))).scalars()}
+    designations = {d.name: d.id for d in (await db.execute(select(Designation))).scalars()}
+    emp_types = {e.name: e.id for e in (await db.execute(select(EmploymentType))).scalars()}
+
+    if not (fy and departments and designations and emp_types):
+        print(
+            "  demo employees: SKIPPED — Masters is empty (needs departments, designations,\n"
+            "    employment types and a financial year). Run scripts/wipe_and_reseed_masters.py,\n"
+            "    then re-run this seed to link the five demo logins to employee records."
+        )
+        return
+
+    def pick(table: dict[str, str], preferred: str) -> str:
+        """Fall back to any row rather than skipping the whole seed — the exact
+        department matters far less than the login having one at all."""
+        return table.get(preferred) or next(iter(table.values()))
+
+    # Allocated by hand rather than through allocate_number(): that helper
+    # raises HTTPException and takes a lock meant for request handling, neither
+    # of which belongs in a seed. The EMP- prefix matches SEED_NUMBER_PREFIX_RULES.
+    existing_codes = set((await db.execute(select(Employee.employee_code))).scalars())
+    seq = 1
+
+    def next_code() -> str:
+        nonlocal seq
+        while f"DEMO-{seq:04d}" in existing_codes:
+            seq += 1
+        code = f"DEMO-{seq:04d}"
+        existing_codes.add(code)
+        return code
+
+    created = 0
+    super_admin_employee_id: str | None = None
+
+    for email, first, last, dept, desig, etype in DEMO_EMPLOYEES:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if user is None:
+            continue
+
+        # Idempotent on the LINK, not on the email — an employee row may already
+        # exist for this address from some other path without being linked.
+        linked = (await db.execute(select(Employee).where(Employee.user_id == user.id))).scalar_one_or_none()
+        if linked is not None:
+            if email == "superadmin@meshrd.in":
+                super_admin_employee_id = linked.id
+            continue
+
+        by_email = (await db.execute(select(Employee).where(Employee.email == email))).scalar_one_or_none()
+        if by_email is not None:
+            by_email.user_id = user.id
+            by_email.login_created_at = datetime.now(timezone.utc)
+            if email == "superadmin@meshrd.in":
+                super_admin_employee_id = by_email.id
+            created += 1
+            continue
+
+        employee = Employee(
+            id=str(uuid.uuid4()),
+            employee_code=next_code(),
+            code_financial_year_id=fy.id,
+            first_name=first,
+            last_name=last,
+            email=email,
+            department_id=pick(departments, dept),
+            designation_id=pick(designations, desig),
+            employment_type_id=pick(emp_types, etype),
+            joining_date=date(2024, 4, 1),
+            employment_status="ACTIVE",
+            user_id=user.id,
+            login_created_at=datetime.now(timezone.utc),
+            reporting_manager_id=super_admin_employee_id,
+            created_by=user.id,
+            updated_by=user.id,
+        )
+        db.add(employee)
+        await db.flush()
+        if email == "superadmin@meshrd.in":
+            super_admin_employee_id = employee.id
+        created += 1
+
+    print(f"  demo employees linked to logins: {created}")
+
+
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
         role_ids: dict[str, str] = {}
@@ -791,6 +900,32 @@ async def seed() -> None:
                     must_change_password=True,
                 )
             )
+
+        # Every one of the five logins above must ALSO be an employee.
+        #
+        # Four specs state the self-service baseline verbatim: "every person is,
+        # first, an employee themselves… nobody's access to their own leave
+        # should ever be narrower than a plain Employee's." That is impossible
+        # to honour if no Employee row is linked to the login, because
+        # org_scope.get_own_employee_id() resolves the caller through
+        # Employee.user_id and finds nothing.
+        #
+        # Before this, seed() created the five Users and stopped. The result on
+        # a fresh database: My Profile and My Dashboard dead-ended on "No
+        # employee record is linked to your login" for all five roles; every
+        # self-service LIST degraded to a permanently empty 200 (payslips.py
+        # and its siblings deliberately `return []` when own_id is None); and
+        # every self-service SUBMIT — leave request, expense claim, timesheet,
+        # asset request, salary certificate, comp-hours request, own-profile
+        # change request — 404'd on _require_own_employee().
+        #
+        # Skipped rather than failed when Masters is empty: seed() is designed
+        # to run against a bare database, but Employee needs a department,
+        # designation, employment type and financial year, none of which seed()
+        # creates (scripts/wipe_and_reseed_masters.py does). Re-running seed()
+        # after Masters is populated fills these in — the loop is idempotent on
+        # user_id, so it is safe to run repeatedly.
+        await _seed_demo_employees(db)
 
         prefix_rules_added = 0
         for code_type, label, prefix, include_fy, digits, start in SEED_NUMBER_PREFIX_RULES:
