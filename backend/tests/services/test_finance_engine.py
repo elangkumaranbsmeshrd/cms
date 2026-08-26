@@ -1,6 +1,21 @@
+"""Layer 1 (COMPLETE-TEST-PROMPT §Layer 1) — every expected value below is
+hand-computed from build-docs/APPENDIX-B-business-rules.md and shown as
+arithmetic in a comment above its assertion, never read back off the code.
+
+DIVISION AUDIT: app/services/finance_engine.py contains NO division operator
+at all — every function here is addition, subtraction, comparison or a date
+delta. There is therefore no divide-by-zero surface to test; what IS tested
+below is the degenerate ZERO-DENOMINATOR analogue those comparisons do have,
+a document whose total is zero (test_invoice_status_with_a_zero_claim_amount
+/ test_purchase_bill_status_with_a_zero_total). Re-check this note before
+adding any division to that module.
+"""
+
+import uuid
 from datetime import date
 from decimal import Decimal
 
+from app.models.finance import Invoice
 from app.services.finance_engine import ageing_bucket, build_bank_statement, resolve_invoice_status_after_payment, resolve_purchase_bill_status
 
 
@@ -122,3 +137,227 @@ def test_statement_empty_input_produces_empty_output():
 def test_statement_single_row_balance_equals_its_own_debit():
     lines = build_bank_statement([(date(2026, 8, 1), "Only claim", None, "REF-1", Decimal("250"))])
     assert lines[0].running_balance == Decimal("250")
+
+
+# ========================================== ZERO-DENOMINATOR (divide-by-zero analogue)
+def test_invoice_status_with_a_zero_claim_amount():
+    """The degenerate total. APPENDIX-B:430 caps a Credit Note at the
+    invoice's Grand Total, so a 100%-credited invoice legitimately reaches
+    Claim = 0. APPENDIX-B:611 states the mirror-image rule in full for the
+    same arithmetic on a Purchase Bill: PAID needs "the new TOTAL PAID EQUALS
+    the ... Total", PART-PAID needs it "MORE THAN ZERO BUT LESS THAN the
+    Total" — with nothing received, neither clause is satisfied, so the
+    document stays at its unsettled floor (SENT for an invoice, since
+    Draft->Sent is a separate explicit action). No division is performed on
+    the zero total, and nothing raises.
+    """
+    assert resolve_invoice_status_after_payment(Decimal("0"), Decimal("0"), Decimal("0")) == "SENT"
+
+
+def test_invoice_status_zero_claim_with_money_actually_received():
+    # settled = 1 + 0 = 1; 1 > 0 so it is not the unsettled floor, and
+    # 1 >= claim 0 satisfies APPENDIX-B:611's "TOTAL PAID EQUALS the Total"
+    # clause (it exceeds it) -> PAID. Still no division by the zero total.
+    assert resolve_invoice_status_after_payment(Decimal("1"), Decimal("0"), Decimal("0")) == "PAID"
+
+
+def test_purchase_bill_status_with_a_zero_total():
+    # settled = 0 + 0 = 0, which is not "MORE THAN ZERO" (APPENDIX-B:611),
+    # so the bill is UNPAID rather than PAID-by-vacuous-equality.
+    assert resolve_purchase_bill_status(Decimal("0"), Decimal("0"), Decimal("0")) == "UNPAID"
+
+
+# ============================================================ INVOICE BALANCE
+# APPENDIX-B:426, verbatim: "Balance = Grand Total - Paid", where
+#   APPENDIX-B:419  Grand Total = Subtotal + Tax Amount
+#   APPENDIX-B:425  Paid        = sum of every payment recorded against the invoice
+#   APPENDIX-B:437  an approved Credit Note reduces the EFFECTIVE OUTSTANDING
+#                   balance by the Credit Amount
+#   APPENDIX-B:428  a payment "must not exceed Balance Due. Overpayment is
+#                   blocked outright"
+# There is no pure Python invoice-balance function to unit-test: the production
+# formula is the GENERATED ALWAYS AS column on app/models/finance.py:145 —
+#   subtotal + tax_amount - credit_note_total - amount_received - withheld_total
+# Asserting hand-computed values against a Python re-implementation of that
+# expression would prove nothing, so these tests exercise the real column
+# through the throwaway in-memory SQLite session from tests/conftest.py
+# (SQLite 3.31+ supports generated columns, so the production expression is
+# the one actually evaluated here). Money is Numeric(14, 2) and round-trips as
+# a 2-decimal Decimal; every expected figure below is worked out by hand.
+_FY_ID = "fy-2026"
+_CUSTOMER_ID = "cust-1"
+
+
+async def _invoice(
+    db,
+    *,
+    subtotal: str,
+    tax_amount: str = "0.00",
+    credit_note_total: str = "0.00",
+    amount_received: str = "0.00",
+    withheld_total: str = "0.00",
+) -> Invoice:
+    """One invoice row carrying only the five money inputs the balance
+    expression reads. The FK columns are unenforced here (the fixture leaves
+    SQLite's PRAGMA foreign_keys at its default OFF), so no Customer or
+    FinancialYear row is needed to evaluate the arithmetic.
+    """
+    invoice = Invoice(
+        id=str(uuid.uuid4()),
+        invoice_number=f"INV-2026-{uuid.uuid4().hex[:5]}",
+        financial_year_id=_FY_ID,
+        customer_id=_CUSTOMER_ID,
+        customer_name_snapshot="Acme Pvt Ltd",
+        invoice_date=date(2026, 6, 1),
+        subtotal=Decimal(subtotal),
+        tax_amount=Decimal(tax_amount),
+        credit_note_total=Decimal(credit_note_total),
+        amount_received=Decimal(amount_received),
+        withheld_total=Decimal(withheld_total),
+    )
+    db.add(invoice)
+    await db.flush()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def test_invoice_balance_unpaid_is_the_whole_grand_total(db_session):
+    # Grand Total = 12500.00 + 2250.00 = 14750.00   (APPENDIX-B:419)
+    # Paid        = 0.00                            (APPENDIX-B:425)
+    # Balance     = 14750.00 - 0.00 = 14750.00      (APPENDIX-B:426)
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00")
+    assert invoice.grand_total == Decimal("14750.00")
+    assert invoice.balance_due == Decimal("14750.00")
+
+
+async def test_invoice_balance_part_paid(db_session):
+    # Grand Total = 12500.00 + 2250.00 = 14750.00
+    # Paid        = 6000.00
+    # Balance     = 14750.00 - 6000.00 = 8750.00
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00", amount_received="6000.00")
+    assert invoice.balance_due == Decimal("8750.00")
+
+
+async def test_invoice_balance_exactly_paid_is_zero(db_session):
+    # Paid    = 14750.00, exactly the Grand Total
+    # Balance = 14750.00 - 14750.00 = 0.00 — and APPENDIX-B:431 makes this
+    # the point at which Status becomes Paid and the invoice locks (:433).
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00", amount_received="14750.00")
+    assert invoice.balance_due == Decimal("0.00")
+    assert resolve_invoice_status_after_payment(invoice.amount_received, invoice.withheld_total, invoice.claim_amount) == "PAID"
+
+
+async def test_invoice_balance_overpaid_goes_negative_which_is_why_overpayment_is_blocked_upstream(db_session):
+    """APPENDIX-B:428 states the handling of an overpayment exactly: the
+    Payment Amount "must not exceed Balance Due. Overpayment is blocked
+    outright with the error 'Amount cannot exceed the balance due of
+    Rs<balance>'." The spec therefore has no negative-balance state at all —
+    it is unreachable through the API, guarded before the write at
+    app/api/v1/invoices.py:735.
+
+    What this test pins down is that the guard is genuinely load-bearing:
+    the balance expression itself does NOT clamp at zero, so if that check
+    were ever removed the stored balance would go negative rather than
+    saturate. Hand-computed: 14750.00 - 15000.00 = -250.00.
+    """
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00", amount_received="15000.00")
+    assert invoice.balance_due == Decimal("-250.00")
+    assert invoice.balance_due < 0, "the formula does not clamp — APPENDIX-B:428's pre-write guard is the only thing preventing this state"
+
+    # And the guard's own predicate, on the state one step earlier: with
+    # 14750.00 still outstanding, a 15000.00 payment exceeds the balance due
+    # and is the case :428 rejects outright.
+    balance_before = Decimal("14750.00")
+    assert Decimal("15000.00") > balance_before
+
+
+async def test_invoice_balance_with_an_approved_credit_note_applied(db_session):
+    # APPENDIX-B:437 — an approved Credit Note reduces the EFFECTIVE
+    # OUTSTANDING balance by the Credit Amount without editing the invoice.
+    # Grand Total = 12500.00 + 2250.00 = 14750.00
+    # Credit Note = 3750.00
+    # Claim       = 14750.00 - 3750.00 = 11000.00
+    # Paid        = 0.00
+    # Balance     = 11000.00 - 0.00 = 11000.00
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00", credit_note_total="3750.00")
+    assert invoice.grand_total == Decimal("14750.00"), "the Credit Note must NOT rewrite the original invoice's Grand Total (:437)"
+    assert invoice.claim_amount == Decimal("11000.00")
+    assert invoice.balance_due == Decimal("11000.00")
+
+
+async def test_invoice_balance_with_a_credit_note_and_a_payment(db_session):
+    # Grand Total = 14750.00; Credit Note 3750.00; Paid 4000.00
+    # Balance = 14750.00 - 3750.00 - 4000.00 = 7000.00
+    invoice = await _invoice(
+        db_session, subtotal="12500.00", tax_amount="2250.00", credit_note_total="3750.00", amount_received="4000.00"
+    )
+    assert invoice.balance_due == Decimal("7000.00")
+
+
+async def test_invoice_balance_when_a_credit_note_extinguishes_the_whole_claim(db_session):
+    # APPENDIX-B:430 caps the Credit Amount at the Grand Total, so a full
+    # 14750.00 credit is the largest legal one.
+    # Balance = 14750.00 - 14750.00 - 0.00 = 0.00, with no money received —
+    # a Credit Note "does NOT move money" (APPENDIX-B:438).
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00", credit_note_total="14750.00")
+    assert invoice.claim_amount == Decimal("0.00")
+    assert invoice.balance_due == Decimal("0.00")
+    assert invoice.amount_received == Decimal("0.00"), "the balance cleared without a rupee being received"
+
+
+async def test_invoice_balance_after_multiple_partial_payments(db_session):
+    """APPENDIX-B:436 — "Multiple partial payments are supported against the
+    same invoice; Record Payment can be opened again and again until the
+    balance clears", and :425 makes Paid the SUM of every one of them.
+    Grand Total = 12500.00 + 2250.00 = 14750.00.
+    """
+    invoice = await _invoice(db_session, subtotal="12500.00", tax_amount="2250.00")
+
+    # payment 1: Paid = 2500.00           -> Balance = 14750.00 - 2500.00 = 12250.00
+    invoice.amount_received = Decimal("2500.00")
+    await db_session.flush()
+    await db_session.refresh(invoice)
+    assert invoice.balance_due == Decimal("12250.00")
+
+    # payment 2: Paid = 2500.00 + 3250.00 = 5750.00  -> Balance = 14750.00 - 5750.00 = 9000.00
+    invoice.amount_received = Decimal("5750.00")
+    await db_session.flush()
+    await db_session.refresh(invoice)
+    assert invoice.balance_due == Decimal("9000.00")
+
+    # payment 3: Paid = 5750.00 + 9000.00 = 14750.00 -> Balance = 14750.00 - 14750.00 = 0.00
+    invoice.amount_received = Decimal("14750.00")
+    await db_session.flush()
+    await db_session.refresh(invoice)
+    assert invoice.balance_due == Decimal("0.00"), "the third payment clears it exactly — no rounding drift across three partials"
+
+
+async def test_invoice_balance_counts_customer_withholding_as_settled(db_session):
+    # Appendix B's own worked example, mirrored from A276: a 1,00,000
+    # invoice settled by a 90,000 receipt with 10,000 withheld by the
+    # customer is fully settled — Balance = 100000.00 - 90000.00 - 10000.00
+    # = 0.00 — even though only 90,000 ever reached the bank.
+    invoice = await _invoice(db_session, subtotal="100000.00", amount_received="90000.00", withheld_total="10000.00")
+    assert invoice.grand_total == Decimal("100000.00")
+    assert invoice.settled_amount == Decimal("100000.00")
+    assert invoice.balance_due == Decimal("0.00"), "ignoring withholding would strand this invoice at Part-Paid with a phantom 10,000 balance"
+
+
+async def test_invoice_balance_keeps_money_at_exactly_two_decimals(db_session):
+    # Grand Total = 55.61 + 10.01 = 65.62; Paid = 12.34
+    # Balance     = 65.62 - 12.34 = 53.28
+    # Numeric(14, 2) — the result must be exactly 2 decimal places, not a
+    # binary-float approximation such as 53.279999999999994.
+    invoice = await _invoice(db_session, subtotal="55.61", tax_amount="10.01", amount_received="12.34")
+    assert invoice.grand_total == Decimal("65.62")
+    assert invoice.balance_due == Decimal("53.28")
+    assert isinstance(invoice.balance_due, Decimal), "money must never come back as a float"
+    assert invoice.balance_due.as_tuple().exponent == -2, "money is stored and returned at exactly 2 decimal places"
+
+
+async def test_invoice_balance_of_a_zero_value_invoice(db_session):
+    # The degenerate document: Grand Total = 0.00 + 0.00 = 0.00, Paid 0.00
+    # -> Balance = 0.00. Nothing divides by the zero total.
+    invoice = await _invoice(db_session, subtotal="0.00")
+    assert invoice.grand_total == Decimal("0.00")
+    assert invoice.balance_due == Decimal("0.00")

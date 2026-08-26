@@ -17,7 +17,7 @@ rule and Mandatory holidays" is exactly what that function already is.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 import calendar
 
@@ -74,6 +74,30 @@ def resolve_pay_period(
         start_month = end_month - 1 if end_month > 1 else 12
         start_year = end_year if end_month > 1 else end_year - 1
         period_start = _clamp_day(start_year, start_month, start_day)
+
+        # Periods must never overlap: a date belonging to two runs is priced
+        # TWICE. APPENDIX-B decides period membership purely by comparing a
+        # date against the resolved range, and Run Payroll applies that same
+        # comparison to attendance, compensatory make-up days, unpaid leave
+        # and ad-hoc adjustments alike — so one overlapping day silently
+        # double-deducts a real salary.
+        #
+        # Clamping start_day on its own is what breaks it. With Start 29 /
+        # End 28, March resolves start = clamp(Feb, 29) = 28-Feb, which is
+        # exactly February's own period_end. The previous period ended on
+        # whatever END day resolved to in that month, so anchor to that and
+        # take the next day: contiguous by construction, for any config.
+        #
+        # This is a normalisation, not a rejection, because the schema
+        # permits the shape: ck_pay_cycles_start/_end bound both to 1..31
+        # with no relationship between them, and PayCycleWrite has no
+        # validator, so "29th to 28th" is an entirely ordinary thing to
+        # configure. A start_day <= end_day config overlaps for the same
+        # reason and is corrected here too.
+        previous_period_end = _clamp_day(start_year, start_month, end_day)
+        if period_start <= previous_period_end:
+            period_start = previous_period_end + timedelta(days=1)
+
         credit_month, credit_year = end_month, end_year
 
     salary_credit_date = _clamp_day(credit_year, credit_month, salary_credit_day)

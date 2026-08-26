@@ -28,13 +28,65 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 TWO_PLACES = Decimal("0.01")
 
 
 def _money(value: Decimal) -> Decimal:
     return value.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _allocate_to_total(parts: list[Decimal], target: Decimal) -> list[Decimal]:
+    """Round `parts` to paise so they sum EXACTLY to `target`.
+
+    Rounding each part on its own does not do this, and the drift is not
+    cosmetic. A 50/50 split of 100.05 gives 50.025 twice, each rounding to
+    50.03, totalling 100.06 — the printed CGST and SGST lines then charge a
+    paise the Grand Total never did. Progressive slab bands drift the same
+    way, because the total is rounded once from the unrounded sum while each
+    band is rounded on its own. Appendix B is explicit that component shares
+    "must total EXACTLY 100% of the head's calculated amount", and an invoice
+    whose tax lines do not add up to its own tax figure is not defensible to
+    the customer who receives it or to whoever audits it later.
+
+    Largest-remainder method: round every part down, then hand the leftover
+    paise out one at a time to whichever parts were cut by the most. That is
+    the standard apportionment rule — it keeps every part within one paise of
+    its exact share, and the result is deterministic, which matters because
+    the same invoice must render identically every time it is opened.
+    """
+    if not parts:
+        return []
+
+    floors = [p.quantize(TWO_PLACES, rounding=ROUND_DOWN) for p in parts]
+    residual = target - sum(floors)
+    # Convert the residual to whole paise WITHOUT dividing: scaleb(2) shifts
+    # the exponent, so this stays exact and keeps the engine's
+    # "every divisor is a literal constant" guard honest (there is a test that
+    # AST-parses this module for exactly that).
+    steps = int(residual.scaleb(2).to_integral_value(rounding=ROUND_HALF_UP))
+    if steps == 0:
+        return floors
+
+    # Rank by the fraction each part lost to flooring, largest first. The
+    # index tiebreak keeps equal remainders (a 50/50 split is exactly this
+    # case) resolving the same way on every run.
+    order = sorted(range(len(parts)), key=lambda i: (parts[i] - floors[i], -i), reverse=True)
+    step = TWO_PLACES if steps > 0 else -TWO_PLACES
+    # Walk the ranked order handing out one paise at a time. No modulo: the
+    # engine keeps every divisor a literal constant (there is an AST test that
+    # enforces it, and % counts), and flooring can never lose a whole paise per
+    # part, so a single pass is normally enough — the loop only wraps if a
+    # caller ever passes a target further from the parts than that.
+    remaining = abs(steps)
+    while remaining:
+        for i in order:
+            if not remaining:
+                break
+            floors[i] += step
+            remaining -= 1
+    return floors
 
 
 @dataclass(frozen=True)
@@ -194,6 +246,7 @@ def _compute_slab(snapshot: TaxHeadSnapshot, base_amount: Decimal) -> tuple[Deci
     # falls inside it; the total is the sum across every band the base reaches.
     total = Decimal(0)
     breakdown: list[SlabBandAmount] = []
+    exact_amounts: list[Decimal] = []
     for band in bands:
         if base_amount <= band.band_from:
             continue
@@ -203,7 +256,15 @@ def _compute_slab(snapshot: TaxHeadSnapshot, base_amount: Decimal) -> tuple[Deci
             continue
         amount = base_in_band * band.rate_or_amount / Decimal(100)
         total += amount
-        breakdown.append(SlabBandAmount(band.sequence_no, base_in_band, _money(amount)))
+        exact_amounts.append(amount)
+        breakdown.append(SlabBandAmount(band.sequence_no, base_in_band, amount))
+    # Reconcile the per-band lines to the rounded total the caller charges,
+    # so the displayed breakdown adds up to the tax printed beside it.
+    allocated = _allocate_to_total(exact_amounts, _money(total))
+    breakdown = [
+        SlabBandAmount(b.sequence_no, b.base_in_band, amount)
+        for b, amount in zip(breakdown, allocated)
+    ]
     return total, tuple(breakdown)
 
 
@@ -244,9 +305,11 @@ def _split(snapshot: TaxHeadSnapshot, computed_amount: Decimal) -> tuple[Compone
     total_share = sum((c.share_pct for c in snapshot.split_components), Decimal(0))
     if total_share != Decimal(100):
         raise ValueError(f"Split component shares must sum to 100, got {total_share}")
+    exact = [computed_amount * c.share_pct / Decimal(100) for c in snapshot.split_components]
+    allocated = _allocate_to_total(exact, _money(computed_amount))
     return tuple(
-        ComponentAmount(c.component_name, _money(computed_amount * c.share_pct / Decimal(100)))
-        for c in snapshot.split_components
+        ComponentAmount(c.component_name, amount)
+        for c, amount in zip(snapshot.split_components, allocated)
     )
 
 
