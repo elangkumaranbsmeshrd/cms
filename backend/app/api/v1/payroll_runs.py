@@ -889,11 +889,16 @@ async def confirm_payroll_run(
         # no_autoflush block — so without this, the refresh DISCARDS that write
         # and re-reads the old status from the database.
         #
-        # It only ever appeared to work by accident: the three db.get() calls
-        # above autoflush, which happened to persist it on the way past. An
-        # employee with no department, designation AND employment type makes
-        # none of those calls, so nothing flushes and the status is silently
-        # lost — for that employee only.
+        # It only ever appeared to work by accident: it depended on at least
+        # one of the three db.get() calls above MISSING the session identity
+        # map and autoflushing on its way past. That is broader than "no
+        # department/designation/employment type" — it fails just as
+        # silently for an employee whose department, designation and
+        # employment type were already loaded by an EARLIER employee's row
+        # in this same loop (a shared department is normal), because a
+        # db.get() that HITS the identity map emits no SQL and triggers no
+        # flush. Confirmed by direct test: whether the write survives
+        # depended on identity-map state, not on which FKs were null.
         #
         # What that costs is not cosmetic. payroll_run_employees.status is what
         # the A116 double-payment guard reads to skip an already-processed
