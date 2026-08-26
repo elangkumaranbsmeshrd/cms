@@ -9,6 +9,7 @@ import { EM_DASH } from '../../../shared/screens/cell-format';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { TICKET_CATEGORY_REF, TICKET_CUSTOMER_REF, TICKET_EMPLOYEE_REF, TICKET_PRIORITY_OPTIONS, TicketRow, TicketWriteBody } from '../ticket.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'ticket.list';
 
@@ -47,7 +48,7 @@ const SCREEN = 'ticket.list';
 @Component({
   selector: 'app-ticket-form',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

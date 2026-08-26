@@ -3,6 +3,7 @@ import { Component, OnInit, computed, inject, input, output, signal } from '@ang
 
 import { environment } from '../../../../environments/environment';
 import { EmployeePickerRow } from '../payroll.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 /** Reusable live, searchable multi-select of employees — Run Payroll's
  * "Specific Employees" mode and Ad-hoc Adjustments' "Multiple Employees" mode
@@ -30,7 +31,7 @@ import { EmployeePickerRow } from '../payroll.api';
 @Component({
   selector: 'app-payroll-employee-picker',
   standalone: true,
-  imports: [],
+  imports: [RoleButtonDirective],
   template: `
     <input
       class="input"

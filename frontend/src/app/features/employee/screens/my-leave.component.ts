@@ -8,6 +8,7 @@ import { SessionStore } from '../../../core/auth/session.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { RefLookup } from '../../../shared/screens/screen.types';
 import { IconComponent } from '../../../shared/ui/icon.component';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 // actioned_by (LeaveRequestRow) is a raw platform User id (whoever
 // approved/rejected the request), resolved via the cross-cutting GET /users.
@@ -79,7 +80,7 @@ const STATUS_OPTIONS = [
 @Component({
   selector: 'app-my-leave',
   standalone: true,
-  imports: [FormsModule, RouterLink, IconComponent],
+  imports: [FormsModule, RouterLink, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

@@ -15,6 +15,7 @@ import {
   TICKET_STATUS_OPTIONS,
   TicketReportsSummary,
 } from '../ticket.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 /** §2.5 Support Reports (ticket.reports — a SEPARATE RBAC screen key from
  * ticket.list, zero actions: read-only for whoever can open it). Bespoke, not
@@ -62,7 +63,7 @@ import {
 @Component({
   selector: 'app-ticket-reports',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

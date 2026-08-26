@@ -12,6 +12,7 @@ import { IconComponent } from '../../../shared/ui/icon.component';
 import { OPPORTUNITY_CUSTOMER_REF, OPPORTUNITY_OWNER_REF, OPPORTUNITY_STAGE_OPTIONS, OpportunityRow } from '../opportunity.api';
 import { OpportunityActivitiesComponent } from './opportunity.activities.component';
 import { OpportunityFilesComponent } from './opportunity.files.component';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'opportunity.pipeline';
 
@@ -50,7 +51,7 @@ type TabKey = 'details' | 'activities' | 'files';
 @Component({
   selector: 'app-opportunity-record',
   standalone: true,
-  imports: [IconComponent, FieldGridComponent, OpportunityActivitiesComponent, OpportunityFilesComponent],
+  imports: [IconComponent, FieldGridComponent, OpportunityActivitiesComponent, OpportunityFilesComponent, RoleButtonDirective],
   template: `
     @if (isLoading()) {
       <div class="empty">

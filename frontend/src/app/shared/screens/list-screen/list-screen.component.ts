@@ -13,6 +13,7 @@ import { EM_DASH, badgeClass, formatDate, formatMoney, humanizeEnum, initials, i
 import { CUSTOM_PRESET, DatePreset, buildDatePresets } from '../date-presets';
 import { RefDataService } from '../ref-data.service';
 import { createListStore } from './create-list-store';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** ARCH-3 §2's "most screens are a config object, not a component" — this
  * one component renders every 'list'-shape screen, and therefore also owns
@@ -22,7 +23,7 @@ import { createListStore } from './create-list-store';
 @Component({
   selector: 'app-list-screen',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <!-- embedded = this list is a TAB BODY inside a tabbed record screen, so
          the surrounding page head/title belongs to the host, not here. The

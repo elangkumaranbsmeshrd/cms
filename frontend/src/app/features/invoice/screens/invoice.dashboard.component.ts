@@ -8,6 +8,7 @@ import { EM_DASH, formatDate, formatMoney, isBlank } from '../../../shared/scree
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { PAYMENT_MODE_REF } from '../invoice.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 interface OverdueInvoiceRow {
   readonly invoice_number: string;
@@ -114,7 +115,7 @@ function inrAbbr(value: unknown): string {
 @Component({
   selector: 'app-invoice-dashboard',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

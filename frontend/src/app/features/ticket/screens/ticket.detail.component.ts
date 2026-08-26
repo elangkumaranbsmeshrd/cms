@@ -22,6 +22,7 @@ import {
   TicketEntryRow,
   TicketRow,
 } from '../ticket.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'ticket.list';
 
@@ -52,7 +53,7 @@ const SCREEN = 'ticket.list';
 @Component({
   selector: 'app-ticket-detail',
   standalone: true,
-  imports: [IconComponent, ConversationScreenComponent],
+  imports: [IconComponent, ConversationScreenComponent, RoleButtonDirective],
   template: `
     @if (isLoading()) {
       <div class="empty">

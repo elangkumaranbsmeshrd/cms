@@ -7,6 +7,7 @@ import { SessionStore } from '../../../core/auth/session.store';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { RefLookup } from '../../../shared/screens/screen.types';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'customer.directory';
 
@@ -46,7 +47,7 @@ const TYPE_ICON: Record<string, string> = { CALL: '📞', EMAIL: '✉️', MEETI
 @Component({
   selector: 'app-customer-activities',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RoleButtonDirective],
   template: `
     @if (isLoading()) {
       <div class="empty"><p>Loading…</p></div>

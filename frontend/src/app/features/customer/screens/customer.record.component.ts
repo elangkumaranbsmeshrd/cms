@@ -18,6 +18,7 @@ import { buildCustomerInvoicesListConfig } from './customer.invoices.list.config
 import { buildCustomerOpportunitiesListConfig } from './customer.opportunities.list.config';
 import { buildCustomerProjectsListConfig } from './customer.projects.list.config';
 import { buildCustomerTicketsListConfig } from './customer.tickets.list.config';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'customer.directory';
 
@@ -82,7 +83,7 @@ const TABS: readonly TabMeta[] = [
 @Component({
   selector: 'app-customer-record',
   standalone: true,
-  imports: [IconComponent, FieldGridComponent, ListScreenComponent, CustomerContactsComponent, CustomerActivitiesComponent, CustomerFilesComponent],
+  imports: [IconComponent, FieldGridComponent, ListScreenComponent, CustomerContactsComponent, CustomerActivitiesComponent, CustomerFilesComponent, RoleButtonDirective],
   template: `
     @if (isLoading()) {
       <div class="empty">

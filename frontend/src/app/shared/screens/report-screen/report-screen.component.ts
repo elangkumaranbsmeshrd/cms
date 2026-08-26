@@ -23,6 +23,7 @@ import {
   ReportTone,
   SecondaryActionDef,
 } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** The prototype's report shape (R.report, app-screens.js:426) — KPI tiles
  * above one or more summary tables, sharing ONE filter bar. leave_reports.py
@@ -45,7 +46,7 @@ import {
 @Component({
   selector: 'app-report-screen',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       @if (!embedded()) {

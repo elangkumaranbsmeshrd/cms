@@ -17,6 +17,7 @@ import { buildProjectTasksBoardConfig } from './project.tasks.board.config';
 import { buildProjectTeamTimesheetListConfig } from './project.team-timesheet.list.config';
 import { ProjectMilestonesComponent } from './project.milestones.component';
 import { ProjectSprintsComponent } from './project.sprints.component';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 interface TabMeta {
   readonly key: string;
@@ -51,7 +52,7 @@ interface TabMeta {
 @Component({
   selector: 'app-project-record',
   standalone: true,
-  imports: [RouterLink, BoardScreenComponent, ListScreenComponent, ReportScreenComponent, ProjectSprintsComponent, ProjectMilestonesComponent],
+  imports: [RouterLink, BoardScreenComponent, ListScreenComponent, ReportScreenComponent, ProjectSprintsComponent, ProjectMilestonesComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

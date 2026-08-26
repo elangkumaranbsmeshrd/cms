@@ -10,6 +10,7 @@ import { ListScreenComponent } from '../list-screen/list-screen.component';
 import { SingletonFormComponent } from '../singleton-form/singleton-form.component';
 import { FieldGridComponent } from '../field-grid/field-grid.component';
 import { ListScreenConfig, SingletonFormConfig, TabDef, TabFieldsDef, TabStaticDef, TabbedScreenConfig } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** The prototype's record shape (R.record, app-screens2.js:802), which is the
  * house layout for any screen that owns sub-resources: an identity card, a tab
@@ -28,7 +29,7 @@ import { ListScreenConfig, SingletonFormConfig, TabDef, TabFieldsDef, TabStaticD
 @Component({
   selector: 'app-tabbed-screen',
   standalone: true,
-  imports: [ListScreenComponent, SingletonFormComponent, FieldGridComponent],
+  imports: [ListScreenComponent, SingletonFormComponent, FieldGridComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

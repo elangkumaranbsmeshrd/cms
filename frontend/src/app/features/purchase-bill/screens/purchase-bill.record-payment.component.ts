@@ -8,6 +8,7 @@ import { PolicyStore } from '../../../core/rbac/policy.store';
 import { formatMoney } from '../../../shared/screens/cell-format';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { BANK_ACCOUNT_REF, PAYMENT_MODE_REF, PurchaseBillPaymentCreateBody, PurchaseBillRow } from '../purchase-bill.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'purchase_bill.list';
 
@@ -59,7 +60,7 @@ interface VendorBankSnapshot {
 @Component({
   selector: 'app-purchase-bill-record-payment',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

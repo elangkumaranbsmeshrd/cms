@@ -16,6 +16,7 @@ import {
   TAX_REF,
   WITHHOLDING_CALCULATED_ON_OPTIONS,
 } from '../invoice.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'invoice.list';
 
@@ -34,7 +35,7 @@ function num(v: unknown): number {
 @Component({
   selector: 'app-invoice-record-payment',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

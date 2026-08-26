@@ -8,6 +8,7 @@ import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { TICKET_EMPLOYEE_REF, TicketRow } from '../ticket.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'ticket.list';
 
@@ -23,7 +24,7 @@ const SCREEN = 'ticket.list';
 @Component({
   selector: 'app-ticket-reassign',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

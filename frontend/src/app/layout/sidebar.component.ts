@@ -8,6 +8,7 @@ import { UiStore } from '../core/ui/ui.store';
 import { AuthService } from '../core/auth/auth.service';
 import { IconComponent } from '../shared/ui/icon.component';
 import { NAV_MODULES, SUB_SCREEN_KEYS, VIEW_ONLY_SUB_SCREEN_KEYS, routeForScreen } from './nav-registry';
+import { RoleButtonDirective } from '../shared/ui/role-button.directive';
 
 interface SubItem {
   screenId: string;
@@ -35,7 +36,7 @@ interface NavGroupRow {
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, IconComponent],
+  imports: [RouterLink, RouterLinkActive, IconComponent, RoleButtonDirective],
   template: `
     <aside class="sidebar">
       <nav class="nav">

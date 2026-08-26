@@ -9,6 +9,7 @@ import { IconComponent } from '../../ui/icon.component';
 import { EM_DASH, humanizeEnum, isBlank } from '../cell-format';
 import { RefDataService } from '../ref-data.service';
 import { ConversationScreenConfig } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** The prototype's R.conversation (app-screens.js:504-555) — a threaded
  * message list with a compose/reply box underneath. Ticket detail's
@@ -31,7 +32,7 @@ import { ConversationScreenConfig } from '../screen.types';
 @Component({
   selector: 'app-conversation-screen',
   standalone: true,
-  imports: [IconComponent, FormsModule],
+  imports: [IconComponent, FormsModule, RoleButtonDirective],
   template: `
     <!-- embedded = hosted as a tab body inside a TabbedScreenConfig record
          screen (e.g. Ticket Detail), which already renders the page title

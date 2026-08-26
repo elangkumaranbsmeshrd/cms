@@ -9,6 +9,7 @@ import { IconComponent } from '../../ui/icon.component';
 import { badgeClass, formatDate, humanizeEnum } from '../cell-format';
 import { FinancialYearLike, withinRange } from '../date-presets';
 import { CalendarScreenConfig, SecondaryActionDef } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 // Full/short month names for grouping and the cal-day mini-date box — the
 // prototype's cal-month grouping is by bare month abbrev (app-screens.js:452,
@@ -40,7 +41,7 @@ function parseIsoDate(iso: string | null | undefined): { y: number; m: number; d
 @Component({
   selector: 'app-calendar-screen',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head" [class.embedded]="embedded()">
       @if (!embedded()) {

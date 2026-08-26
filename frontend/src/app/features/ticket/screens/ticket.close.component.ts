@@ -6,6 +6,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { TICKET_SATISFACTION_OPTIONS, TicketRow } from '../ticket.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'ticket.list';
 
@@ -39,7 +40,7 @@ const SCREEN = 'ticket.list';
 @Component({
   selector: 'app-ticket-close',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

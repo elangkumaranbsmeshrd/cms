@@ -11,6 +11,7 @@ import { badgeClass, formatMoney } from '../cell-format';
 import { CUSTOM_PRESET, DatePreset, buildDatePresets, resolveRange, withinRange } from '../date-presets';
 import { RefDataService } from '../ref-data.service';
 import { BoardColumnDef, BoardScreenConfig, DateRangeValue, FilterDef, FilterOption, FilterValue, NumberRangeValue } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** The kanban/board shape — the prototype's R.board (app-screens.js:339, Task
  * Board & Bugs) and R.pipeline's stage-summary view (app-screens2.js:820,
@@ -39,7 +40,7 @@ import { BoardColumnDef, BoardScreenConfig, DateRangeValue, FilterDef, FilterOpt
 @Component({
   selector: 'app-board-screen',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head" [class.embedded]="embedded()">
       @if (!embedded()) {

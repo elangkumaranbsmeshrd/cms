@@ -16,6 +16,7 @@ import {
   COMPENSATION_STATUS_OPTIONS,
   MONTH_NAMES,
 } from '../payroll.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const DEPARTMENT_REF: RefLookup = { endpoint: '/masters/departments/options', labelKey: 'label' };
 const EMPLOYEE_REF: RefLookup = { endpoint: '/employees/options', labelKey: 'label' };
@@ -40,7 +41,7 @@ type AttendanceTabKey = 'monthly' | 'daywise' | 'impact' | 'compensation' | 'bio
 @Component({
   selector: 'app-payroll-attendance',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

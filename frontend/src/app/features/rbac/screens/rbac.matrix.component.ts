@@ -8,6 +8,7 @@ import { IconComponent } from '../../../shared/ui/icon.component';
 import { MatrixScreenComponent } from '../../../shared/screens/matrix-screen/matrix-screen.component';
 import { MatrixScreenConfig } from '../../../shared/screens/screen.types';
 import { buildRbacMatrixConfig, MatrixModuleRow } from './rbac.permission-matrix.config';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 interface ToggleRow {
   toggle_key: string;
@@ -75,7 +76,7 @@ interface ToggleGroup {
 @Component({
   selector: 'app-rbac-matrix',
   standalone: true,
-  imports: [FormsModule, IconComponent, MatrixScreenComponent],
+  imports: [FormsModule, IconComponent, MatrixScreenComponent, RoleButtonDirective],
   template: `
     <app-matrix-screen [config]="matrixConfig" />
 

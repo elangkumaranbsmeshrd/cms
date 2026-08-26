@@ -21,6 +21,7 @@ import {
   DashboardWidgetDef,
   DashboardWidgetRow,
 } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 // Tone -> the two CSS custom properties every tinted widget reads
 // (`--tone`/`--tone-bg`, e.g. .kpi-ico, .ministat .ico, .feed-ico). The
@@ -75,7 +76,7 @@ const BADGE_TONE_CLASS: Record<DashboardTone, string> = {
 @Component({
   selector: 'app-dashboard-screen',
   standalone: true,
-  imports: [IconComponent, NgTemplateOutlet],
+  imports: [IconComponent, NgTemplateOutlet, RoleButtonDirective],
   template: `
     @if (!embedded()) {
       <div class="page-head">

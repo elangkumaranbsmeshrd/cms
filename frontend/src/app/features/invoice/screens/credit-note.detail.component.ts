@@ -8,6 +8,7 @@ import { PolicyStore } from '../../../core/rbac/policy.store';
 import { badgeClass, formatDate, formatMoney, humanizeEnum } from '../../../shared/screens/cell-format';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { CREDIT_NOTE_REASON_OPTIONS, CREDIT_NOTE_STATUS_OPTIONS, CreditNoteRow, CreditNoteWriteBody, InvoiceRow } from '../invoice.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const SCREEN = 'credit_note.list';
 
@@ -38,7 +39,7 @@ function optionLabel(options: readonly { value: string; label: string }[], value
 @Component({
   selector: 'app-credit-note-detail',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>

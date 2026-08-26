@@ -5,6 +5,7 @@ import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { IconComponent } from '../../ui/icon.component';
 import { FilterOption, MatrixGroup, MatrixItem, MatrixPendingChange, MatrixScreenConfig } from '../screen.types';
+import { RoleButtonDirective } from '../../ui/role-button.directive';
 
 /** The prototype's R.matrix (app-screens2.js:1295) — RBAC's own Permission
  * Matrix screen (14-rbac-module.md §4.2), the reference case this shape was
@@ -27,7 +28,7 @@ import { FilterOption, MatrixGroup, MatrixItem, MatrixPendingChange, MatrixScree
 @Component({
   selector: 'app-matrix-screen',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, RoleButtonDirective],
   template: `
     <!-- embedded = hosted as a tab body inside a TabbedScreenConfig — same
          suppression convention as ListScreenComponent's own 'embedded' input

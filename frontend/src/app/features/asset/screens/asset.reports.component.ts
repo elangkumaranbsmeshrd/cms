@@ -8,6 +8,7 @@ import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { formatMoney } from '../../../shared/screens/cell-format';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { ASSET_STATUS_OPTIONS } from '../asset.api';
+import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
 
 const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
@@ -61,7 +62,7 @@ interface AssetReportsSummary {
 @Component({
   selector: 'app-asset-reports',
   standalone: true,
-  imports: [FormsModule, IconComponent],
+  imports: [FormsModule, IconComponent, RoleButtonDirective],
   template: `
     <div class="page-head">
       <div>
