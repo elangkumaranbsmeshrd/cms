@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/elangkumaranbsmeshrd/cms#readme",
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.3.0"
   }
