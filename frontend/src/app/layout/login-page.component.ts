@@ -50,19 +50,32 @@ import { AuthService } from '../core/auth/auth.service';
 
           <form (ngSubmit)="submit()">
             <div class="field">
-              <label>Email <span class="req">*</span></label>
-              <input class="input" type="email" name="email" [(ngModel)]="email" autocomplete="username" required />
+              <label for="login-email">Email <span class="req" aria-hidden="true">*</span></label>
+              <input
+                class="input"
+                id="login-email"
+                type="email"
+                name="email"
+                aria-label="Email"
+                aria-required="true"
+                [(ngModel)]="email"
+                autocomplete="username"
+                required
+              />
             </div>
             <div class="field">
               <div style="display: flex; align-items: baseline; justify-content: space-between;">
-                <label style="margin-bottom: 0;">Password <span class="req">*</span></label>
+                <label for="login-password" style="margin-bottom: 0;">Password <span class="req" aria-hidden="true">*</span></label>
                 <a class="link" routerLink="/forgot-password" style="font-size: 11.5px;">Forgot password?</a>
               </div>
               <div style="position: relative; margin-top: 5px;">
                 <input
                   class="input"
+                  id="login-password"
                   [type]="showPassword() ? 'text' : 'password'"
                   name="password"
+                  aria-label="Password"
+                  aria-required="true"
                   [(ngModel)]="password"
                   autocomplete="current-password"
                   required
@@ -110,7 +123,12 @@ export class LoginPageComponent {
     this.error.set(null);
     this.submitting.set(true);
     this.auth.login(this.email, this.password).subscribe({
-      next: () => this.router.navigateByUrl('/'),
+      // login() resolves only after GET /me has populated the session, so
+      // must_change_password is known here. A flagged user sent to '/' would
+      // reach a shell where the backend 403s every screen — the authGuard now
+      // catches that too, but routing straight to the right place keeps the
+      // redirect out of the user's way.
+      next: (user) => this.router.navigateByUrl(user.mustChangePassword ? '/change-password' : '/'),
       error: (err) => {
         this.submitting.set(false);
         this.error.set(err?.error?.detail ?? 'Unable to sign in. Check your email and password.');

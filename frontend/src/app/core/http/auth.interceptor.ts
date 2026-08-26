@@ -34,6 +34,20 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   return next(authedReq).pipe(
     catchError((err: HttpErrorResponse) => {
       const isAuthEndpoint = req.url.includes('/auth/refresh') || req.url.includes('/auth/login');
+
+      // A 403 from the must_change_password gate (app/auth/deps.py) is not a
+      // permission problem the user can do anything about on the screen they
+      // are on — it means the whole session is fenced off until the password is
+      // changed. Without this, each screen rendered the raw server string
+      // "Password change required before continuing" as if it were that
+      // screen's own error, which is how the missing flow stayed invisible.
+      // The guard normally prevents ever getting here; this is the backstop for
+      // a flag set mid-session, or a request already in flight.
+      if (err.status === 403 && isApi && err.error?.detail === 'Password change required before continuing') {
+        router.navigateByUrl('/change-password');
+        return throwError(() => err);
+      }
+
       if (err.status !== 401 || !isApi || isAuthEndpoint) {
         return throwError(() => err);
       }

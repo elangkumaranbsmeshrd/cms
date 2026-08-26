@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './core/auth/auth.guard';
+import { authGuard, changePasswordGuard } from './core/auth/auth.guard';
 import { assetRoutes } from './features/asset/asset.routes';
 import { complianceRoutes } from './features/compliance/compliance.routes';
 import { customerRoutes } from './features/customer/customer.routes';
@@ -29,6 +29,16 @@ export const routes: Routes = [
   {
     path: '403',
     loadComponent: () => import('./layout/forbidden-page.component').then((m) => m.ForbiddenPageComponent),
+  },
+  {
+    // Deliberately OUTSIDE the authGuard-gated shell below. A user with
+    // must_change_password set is 403'd by the backend on every endpoint except
+    // POST /auth/change-password and GET /me (app/auth/deps.py), so the shell —
+    // which loads reference data as it renders — cannot host this screen. See
+    // the component's own doc comment for the full history.
+    path: 'change-password',
+    canMatch: [changePasswordGuard],
+    loadComponent: () => import('./layout/change-password-page.component').then((m) => m.ChangePasswordPageComponent),
   },
   {
     path: '',
