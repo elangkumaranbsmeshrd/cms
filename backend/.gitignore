@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+*.egg-info/
+storage/
+# Full DB/file backups and runtime logs — operational artifacts, not source;
+# real seeded data (incl. password hashes) has no business sitting in git
+# history, doubly so on a public repo.
+backups/
+*.log

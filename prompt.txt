@@ -1,0 +1,56 @@
+The sample page you generated looks great — use it as the design baseline for the full prototype.
+
+GOAL
+Build an end-to-end, clickable HTML prototype of this enterprise application by
+reading ALL the attached .md files. The .md files are the source of truth: extract
+every module, sub-module, feature, screen, field, and role from them. Do not invent
+modules that aren't described, and do not skip any module that is described. If
+something is ambiguous in the .md files, make a reasonable enterprise-standard
+assumption and note it in a short "Assumptions" comment at the top of the HTML.
+
+TECH & STRUCTURE
+- Deliver a working HTML prototype (HTML + CSS + JS). Prefer a single self-contained
+  index.html, or a small set of linked pages if that's cleaner — but every link must
+  actually work and navigate. No dead links, no "#" placeholders.
+- No backend required. Use realistic mock/placeholder data so screens feel real
+  (names, dates, statuses, table rows, KPIs, etc.).
+- Reuse the exact visual style, colors, spacing, and components from the sample page
+  so the whole app feels like one consistent design system.
+- Make it responsive and enterprise-grade in polish.
+
+NAVIGATION
+- Persistent app shell on every screen: a top header + a left sidebar (or top nav)
+  that lists every module and its sub-screens.
+- Clicking any nav item loads that screen. Highlight the active item. Include
+  breadcrumbs so the user always knows where they are.
+- Provide a home/dashboard landing screen that links into all major modules.
+- Ensure EVERY module and screen mentioned in the .md files is reachable through
+  navigation — build the complete map, not a subset.
+
+ROLES & ACCESS
+- Put a role selector in the header (dropdown) so I can switch roles on the fly for
+  the demo. Roles come from the .md files (e.g. Super Admin and the other roles
+  defined there).
+- When the role changes, show/hide or enable/disable the modules, menu items, and
+  actions that role is allowed to see, based on the permissions described in the
+  .md files. Make the difference between roles visibly clear.
+
+AUTH (enterprise feel)
+- Add a Login screen as the entry point (email/password fields, company logo area,
+  "Sign in" button). On sign-in, go to the dashboard. It doesn't need real auth —
+  any input should log in.
+- Add a user/profile menu in the header with a Logout option that returns to the
+  Login screen.
+
+SETTINGS & THEME
+- Add a Settings screen available to the Super Admin role.
+- In Settings, include a Light / Dark theme option. The theme toggle should switch
+  the entire app's appearance instantly and persist across screens during the session
+  (in-memory only — do NOT use localStorage/sessionStorage).
+- Optionally surface a quick theme toggle in the header too.
+
+DELIVERABLE
+- One cohesive, navigable prototype covering all modules, features, roles, login/logout,
+  and the Super Admin settings/theme screen.
+- At the top of the HTML, add a comment block listing: (1) every module/screen you built,
+  (2) the roles and what each can access, and (3) any assumptions you made.

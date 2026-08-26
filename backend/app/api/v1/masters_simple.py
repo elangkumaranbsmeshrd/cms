@@ -1,0 +1,377 @@
+"""Instantiates the 15 simple lookup sub-masters' routers from the generic
+factory (masters_lookup.py) — one line of field-shape config each, instead of
+fifteen files repeating the same list/add/edit/delete/deactivate pattern.
+`combined_router` is what main.py includes.
+"""
+
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.v1.masters_lookup import build_lookup_router
+from app.auth.deps import get_current_user
+from app.core.db import get_db
+from app.models.platform import User
+from app.rbac.deps import require_screen
+from app.rbac.resolver import PermissionSet
+from app.models.masters import (
+    AssetCategory,
+    CustomerSource,
+    CustomerStatus,
+    Department,
+    Designation,
+    EmploymentType,
+    ExpenseType,
+    Holiday,
+    HsnSacCode,
+    InsurancePlan,
+    LeaveType,
+    PaymentMode,
+    ServiceCategory,
+    TaxHead,
+    TicketCategory,
+    UnitOfMeasure,
+    WorkWeekPolicy,
+)
+# §3a's `referenced_by` — real FK consumers of the 9 lookups gaining
+# `is_referenced` this pass, found by an exhaustive grep across app/models/
+# (not guessed): every one of these already has working create+read routes
+# today, so a row genuinely can be "in use" even though most of these
+# modules have no frontend yet.
+from app.models.asset import Asset
+from app.models.compliance import Remittance
+from app.models.customer import Customer
+from app.models.employee import Employee
+from app.models.finance import CompanyExpense, ExpenseReimbursement, Invoice, InvoicePayment, PurchaseBillPayment
+from app.models.payroll import Payslip
+from app.models.ticket import Ticket
+from app.models.employee import AnnouncementTarget
+
+combined_router = APIRouter()
+
+
+async def _expense_type_before_write(data: dict, db: AsyncSession, existing: ExpenseType | None) -> dict:
+    """Masters §3.3: "Changing Claim Type on a type already in use is not a
+    silent edit ... it applies from that point forward, never retroactively."
+    The frontend shows the warning with the affected-record count; this is
+    what actually stamps the audit trail those fields exist for
+    (claim_type_changed_at/previous_claim_type) — found missing entirely by
+    the Phase 1 audit, since neither field was even reachable via the API.
+    """
+    if existing is not None and data.get("claim_type") != existing.claim_type:
+        data["previous_claim_type"] = existing.claim_type
+        data["claim_type_changed_at"] = datetime.now(timezone.utc)
+    return data
+
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/expense-types", tag="masters", screen_key="masters.expense_types", model=ExpenseType,
+        fields={
+            "name": (str, ...),
+            "short_code": (str | None, None),
+            "claim_type": (str, ...),  # REIMBURSABLE | COMPANY_PAID
+            "is_recurring": (bool, False),
+            "default_bank_account_id": (str | None, None),
+            "description": (str | None, None),
+        },
+        read_only_fields={
+            "claim_type_changed_at": (datetime | None, None),
+            "previous_claim_type": (str | None, None),
+            "usage_count": (int, 0),
+        },
+        before_write=_expense_type_before_write,
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/leave-types", tag="masters", screen_key="masters.leave_types", model=LeaveType,
+        fields={
+            "name": (str, ...),
+            "short_code": (str | None, None),
+            "is_paid": (bool, ...),
+            "default_annual_quota_days": (Decimal, Decimal(0)),
+            "carry_forward_allowed": (bool, False),
+            "max_carry_forward_days": (Decimal | None, None),
+            "is_quota_tracked": (bool, True),
+        },
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+_holidays_router = build_lookup_router(
+    prefix="/masters/holidays", tag="masters", screen_key="masters.holidays", model=Holiday,
+    fields={
+        "name": (str, ...),
+        "holiday_date": (date, ...),
+        "financial_year_id": (str, ...),
+        "holiday_type": (str, ...),  # MANDATORY | OPTIONAL
+        "recurring_every_year": (bool, False),
+    },
+    create_only_fields={"is_active": (bool, True)},
+)
+
+class _HolidayImportRow(BaseModel):
+    name: str
+    holiday_date: date
+    financial_year_id: str
+    holiday_type: str
+    recurring_every_year: bool = False
+
+
+@_holidays_router.post("/import", status_code=201)
+async def import_holidays(
+    rows: list[_HolidayImportRow],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen("masters.holidays", action="import")),
+    skip_duplicates: bool = Query(True, description="§3.5: Yes skips a date already in the calendar (recommended); No overwrites its name/type/recurring"),
+) -> dict:
+    # Masters §3.5: the per-row summary/duplicate-flagging shown before this
+    # call is a frontend pre-confirmation concern — this endpoint performs the
+    # import the user already confirmed. is_active defaults True; the DB
+    # trigger (0002_masters.py) rejects any date outside the linked FY's range.
+    #
+    # "Duplicate" per §3.5's own wording ("same date already in the calendar")
+    # is (financial_year_id, holiday_date) — not the DB's own three-column
+    # ux_holidays_fy_date_name unique key, which also folds in `name` and so
+    # would let two differently-named holidays share a date. One row per date
+    # is what the calendar (and this screen's own preview) actually shows.
+    existing_by_date = {
+        (h.financial_year_id, h.holiday_date): h
+        for h in (
+            await db.execute(
+                select(Holiday).where(Holiday.financial_year_id.in_({r.financial_year_id for r in rows}))
+            )
+        ).scalars().all()
+    }
+
+    created = 0
+    skipped = 0
+    overwritten = 0
+    for r in rows:
+        existing = existing_by_date.get((r.financial_year_id, r.holiday_date))
+        if existing is not None:
+            if skip_duplicates:
+                skipped += 1
+                continue
+            existing.name = r.name
+            existing.holiday_type = r.holiday_type
+            existing.recurring_every_year = r.recurring_every_year
+            existing.updated_by = current_user.id
+            overwritten += 1
+            continue
+        row = Holiday(
+            id=str(uuid.uuid4()),
+            name=r.name,
+            holiday_date=r.holiday_date,
+            financial_year_id=r.financial_year_id,
+            holiday_type=r.holiday_type,
+            recurring_every_year=r.recurring_every_year,
+            created_by=current_user.id,
+            updated_by=current_user.id,
+        )
+        db.add(row)
+        # Tracked so a second row in the SAME import batch landing on the same
+        # date is caught too, not only rows already in the database.
+        existing_by_date[(r.financial_year_id, r.holiday_date)] = row
+        created += 1
+    await db.commit()
+    return {"imported": created, "skipped": skipped, "overwritten": overwritten}
+
+
+combined_router.include_router(_holidays_router)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/payment-modes", tag="masters", screen_key="masters.payment_modes", model=PaymentMode,
+        fields={"name": (str, ...), "code": (str | None, None), "requires_reference_number": (bool, False)},
+        search_field=["name", "code"],
+        label_field="name",
+        # Widest fan-in of the 9 (§3a) — every payment/reimbursement record
+        # across Compliance, Purchase Bill, Invoice and Expense names one.
+        referenced_by=[
+            (Remittance, "payment_mode_id"), (PurchaseBillPayment, "payment_mode_id"),
+            (InvoicePayment, "payment_mode_id"), (ExpenseReimbursement, "payment_mode_id"),
+            (CompanyExpense, "payment_mode_id"),
+        ],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/departments", tag="masters", screen_key="masters.departments", model=Department,
+        fields={"name": (str, ...), "code": (str | None, None), "description": (str | None, None)},
+        # §4.3 audit: §3.0's cross-cutting rule is "Search, across that
+        # sub-master's name and code fields" — the factory's single-column
+        # default left `code` unsearched. See masters_lookup.py's docstring.
+        search_field=["name", "code"],
+        create_only_fields={"is_active": (bool, True)},
+        # §3a's own table names Department as missing Used too — found on a
+        # second pass, since the first pass's registration only added `code`.
+        # Widest fan-in found in this whole exercise: two other lookups
+        # (Designation, WorkWeekPolicy) reference a department, on top of
+        # real business records.
+        referenced_by=[
+            (Employee, "department_id"), (Asset, "department_id"), (Payslip, "department_id"),
+            (Designation, "department_id"), (WorkWeekPolicy, "department_id"), (AnnouncementTarget, "department_id"),
+        ],
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/designations", tag="masters", screen_key="masters.designations", model=Designation,
+        fields={"name": (str, ...), "code": (str | None, None), "department_id": (str | None, None), "level_grade": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Employee, "designation_id"), (WorkWeekPolicy, "designation_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+async def _hsn_sac_before_write(data: dict, db: AsyncSession, existing: HsnSacCode | None) -> dict:
+    """Masters §3.11: Linked Tax must be "built live from whatever heads
+    currently exist in Taxes, Sales/Billing or Purchase scope, in force" —
+    found unenforced by the Phase 1 audit (any tax_heads id of any scope,
+    expired or not, passed the bare FK check).
+    """
+    linked_id = data.get("linked_tax_head_id")
+    if linked_id is None:
+        return data
+    head = await db.get(TaxHead, linked_id)
+    if head is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Linked Tax must reference an existing tax head")
+    if head.scope not in ("SALES_BILLING", "PURCHASE", "SALES_AND_PURCHASE"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Linked Tax must be a Sales/Billing or Purchase scope head")
+    today = date.today()
+    in_force = head.is_active and head.applies_from <= today and (head.applies_until is None or head.applies_until >= today)
+    if not in_force:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Linked Tax must be an in-force (active, currently applicable) tax head")
+    return data
+
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/hsn-sac-codes", tag="masters", screen_key="masters.hsn_sac_codes", model=HsnSacCode,
+        fields={
+            "code": (str, ...),
+            "code_type": (str, ...),  # HSN | SAC
+            "description": (str, ...),
+            "linked_tax_head_id": (str | None, None),
+            "is_custom": (bool, False),
+            "custom_gst_type": (str | None, None),
+            "custom_gst_rate_pct": (Decimal | None, None),
+        },
+        search_field="code",
+        before_write=_hsn_sac_before_write,
+        create_only_fields={"is_active": (bool, True)},
+        label_field="code",
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/service-categories", tag="masters", screen_key="masters.service_categories", model=ServiceCategory,
+        fields={"name": (str, ...), "code": (str | None, None), "description": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Invoice, "service_category_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+# §3b BUILT — masters_lookup.py's build_lookup_router now has the create-only
+# field concept this comment used to say was missing (`create_only_fields`,
+# accepted by create_row, excluded from write_schema on update_row — so a
+# role with plain 'edit' still cannot flip Status via PUT, only Super Admin's
+# dedicated deactivate/activate actions can, per §4a).
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/units-of-measure", tag="masters", screen_key="masters.units_of_measure", model=UnitOfMeasure,
+        fields={"name": (str, ...), "code": (str | None, None)},
+        search_field=["name", "code"],
+        # Genuinely zero referencing tables exist anywhere in app/models
+        # today (confirmed by an exhaustive grep, not assumed) — an empty
+        # list, not None, so this is "checked, never referenced" rather than
+        # "feature not requested".
+        referenced_by=[],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/ticket-categories", tag="masters", screen_key="masters.ticket_categories", model=TicketCategory,
+        fields={"name": (str, ...), "code": (str | None, None), "description": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Ticket, "category_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/customer-statuses", tag="masters", screen_key="masters.customer_statuses", model=CustomerStatus,
+        fields={"name": (str, ...), "code": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Customer, "status_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/customer-sources", tag="masters", screen_key="masters.customer_sources", model=CustomerSource,
+        fields={"name": (str, ...), "code": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Customer, "source_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/asset-categories", tag="masters", screen_key="masters.asset_categories", model=AssetCategory,
+        fields={
+            "name": (str, ...), "code": (str | None, None), "description": (str | None, None),
+            "default_useful_life_years": (int | None, None),
+        },
+        search_field=["name", "code"],
+        referenced_by=[(Asset, "category_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/employment-types", tag="masters", screen_key="masters.employment_types", model=EmploymentType,
+        fields={"name": (str, ...), "code": (str | None, None)},
+        search_field=["name", "code"],
+        referenced_by=[(Employee, "employment_type_id"), (WorkWeekPolicy, "employment_type_id"), (Payslip, "employment_type_id")],
+        create_only_fields={"is_active": (bool, True)},
+    )
+)
+
+combined_router.include_router(
+    build_lookup_router(
+        prefix="/masters/insurance-plans", tag="masters", screen_key="masters.insurance_plans", model=InsurancePlan,
+        fields={
+            "plan_name": (str, ...),
+            "plan_type": (str, ...),  # HEALTH | LIFE | PERSONAL_ACCIDENT
+            "provider": (str | None, None),
+            "coverage_amount": (Decimal, ...),
+            "company_contribution_monthly": (Decimal, ...),
+            "employee_contribution_monthly": (Decimal, Decimal(0)),
+        },
+        search_field="plan_name",
+        create_only_fields={"is_active": (bool, True)},
+    )
+)

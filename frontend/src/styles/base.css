@@ -1,0 +1,99 @@
+/* Ported from prototype/app.css §2 (reset) + §3 (login screen). Font
+   self-hosting (ARCH-3 §5's stated target: .woff2, font-display:swap, no
+   external font-src) is NOT done here — no font binary files exist in this
+   repo to vendor. Using the same Google Fonts CDN link the prototype
+   already used (index.html) as an interim measure; self-host when real
+   .woff2 files are sourced. */
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.num { letter-spacing: -.01em; }
+a { color: inherit; text-decoration: none; }
+::selection { background: var(--accent-subtle); color: var(--text-primary); }
+svg { display: block; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+h1, h2, h3, h4 { margin: 0; }
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ==================== LOGIN ==================== */
+.login-wrap { min-height: 100vh; display: grid; grid-template-columns: 1.05fr .95fr; background: var(--canvas); }
+.login-art {
+  background: var(--sidebar-bg); color: #fff; padding: 44px 48px;
+  display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden;
+}
+.login-art::before {
+  content: ""; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, .028) 1px, transparent 1px),
+                     linear-gradient(90deg, rgba(255, 255, 255, .028) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 30%, transparent 100%);
+}
+.login-art > * { position: relative; }
+.login-brand { display: flex; align-items: center; gap: 11px; }
+.login-brand .brand-mark { width: 34px; height: 34px; font-size: 15px; border-radius: 7px; }
+.login-brand b { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
+.login-brand span { display: block; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--sidebar-muted); font-weight: 600; }
+.login-pitch h2 { font-size: 32px; font-weight: 600; letter-spacing: -.03em; line-height: 1.14; margin-bottom: 14px; max-width: 15ch; }
+.login-pitch p { color: #98a1b4; font-size: 13.5px; line-height: 1.6; max-width: 44ch; margin: 0; }
+.login-foot { font-size: 11px; color: var(--sidebar-muted); letter-spacing: .02em; }
+
+.login-panel { display: grid; place-items: center; padding: 32px; }
+.login-card { width: 100%; max-width: 352px; }
+.login-card h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 5px; }
+.login-card .lede { color: var(--text-secondary); font-size: 13px; margin: 0 0 24px; }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; letter-spacing: .01em; }
+.field .req { color: var(--danger); }
+.input {
+  width: 100%; height: 36px; padding: 0 11px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-md); font-size: 13px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
+.input::placeholder { color: var(--text-tertiary); }
+textarea.input { height: auto; padding: 8px 11px; resize: vertical; min-height: 64px; line-height: 1.5; }
+select.input {
+  appearance: none; cursor: pointer; padding-right: 28px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23878e9c' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+}
+/* A DERIVED value — computed by the server (or previewed from what has been
+   typed) and never editable. Deliberately not styled as an .input: an input
+   box with a value you cannot change reads as a broken field. Same height as
+   .input so a mixed row still lines up. */
+.readonly-value {
+  min-height: 36px; display: flex; align-items: center; padding: 0 11px 0 0;
+  font-size: 13px; color: var(--text-primary); font-variant-numeric: tabular-nums;
+}
+/* The per-field help line the prototype shows under nearly every input. */
+.field .hint { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; line-height: 1.45; }
+/* A field that needs the full width of the two-column form grid. */
+.field.span-2 { grid-column: 1 / -1; }
+.btn-block { width: 100%; height: 38px; justify-content: center; font-size: 13.5px; font-weight: 600; }
+.login-hint {
+  margin-top: 18px; padding: 10px 12px; border: 1px solid var(--info-line); background: var(--info-bg);
+  border-radius: var(--r-md); font-size: 11.5px; color: var(--info); line-height: 1.5;
+}
+.login-hint b { font-weight: 650; }
+.form-error {
+  margin-top: 12px; padding: 10px 12px; border: 1px solid var(--danger-line); background: var(--danger-bg);
+  border-radius: var(--r-md); font-size: 12px; color: var(--danger); line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-art { display: none; }
+}

@@ -1,0 +1,406 @@
+﻿<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meshrd CMS â€” Prototype</title>
+
+<!--
+================================================================================
+  MESHRD CMS â€” END-TO-END CLICKABLE HTML PROTOTYPE
+  Built from the 14 module specification documents in the parent folder.
+  No backend. All data is mock data. Every navigation link resolves to a screen.
+
+  RUN IT: open this file (prototype/index.html) directly in a browser.
+  FILES:  index.html Â· app.css Â· data.js Â· app-core.js Â· app-forms.js
+          app-screens.js Â· app-screens2.js
+
+================================================================================
+  (1) MODULES AND SCREENS BUILT â€” 14 modules, 151 screens
+================================================================================
+
+  98 navigable screens (the module screens listed below), plus 53 create/action
+  form screens â€” one per Fields Table defined in the specs ("+ Add Expense Type",
+  "Apply for Leave", "Adjust Balance", "Add Tax Head", "Log Hours", â€¦). Those 53
+  are flagged navHidden: they are reached from the button that triggers them on
+  their parent screen rather than padding the sidebar, and stay fully routable.
+
+  FIELD COVERAGE. Every Fields Table across the 14 specs was audited row by row
+  against what the prototype actually renders. A field described only in a hint or
+  a note counts as MISSING â€” it must be a real rendered field. Derived / auto /
+  system values (Financial Year Label, End Date, Locked By, computed totals) are
+  rendered read-only with a lock label and a hint explaining the derivation, never
+  omitted and never described only in prose.
+
+  Two passes were run. The first covered screens driven by the form registry. A
+  second, independent adversarial re-audit then checked all 123 field-bearing spec
+  screens and found 28 further gaps â€” almost all on screens drawn by BESPOKE
+  renderers rather than a form key (Company Profile's five tabs, My Profile's
+  approval group, the Salary Structure header, the Quote/Invoice/Bill tax rows,
+  report sub-views). Those are now fixed too. If you add a screen, note that a
+  bespoke renderer is the easy place for a Fields Table to go unimplemented.
+
+  VERIFIED (headless render of every screen in every role that can see it):
+    Â· 377 roleÃ—screen renders, 0 errors
+    Â· 0 dead link targets Â· 0 unreachable screens Â· 0 orphaned form definitions
+    Â· all 28 re-audit findings spot-checked as present in rendered output
+================================================================================
+
+  OVERVIEW
+    Dashboard ............................. Employee Â§2.11 + Invoice Â§2.1 (role-aware)
+
+  MODULE 1 â€” MASTERS (19 sub-masters)
+    Financial Year Â§3.1 Â· Taxes Â§3.2 (Tax Heads / Tax Schemes / Where Used tabs)
+    Expense Types Â§3.3 Â· Leave Types Â§3.4 Â· Holidays Â§3.5
+    Company Profile Â§3.6 (General Info / Addresses / Bank Details / Documents /
+      Number Prefixes tabs) Â· Bank Account Â§3.7 Â· Payment Mode Â§3.8
+    Department Â§3.9 Â· Designation Â§3.10 Â· HSN/SAC Code Â§3.11 Â· Service Category Â§3.12
+    Unit of Measure Â§3.13 Â· Ticket Categories Â§3.14 Â· Customer Status Â§3.15
+    Customer Source Â§3.16 Â· Asset Categories Â§3.17 Â· Employment Type Â§3.18
+    Insurance Plans Â§3.19
+
+  MODULE 2 â€” EMPLOYEE (19 screens)
+    Employee Directory Â§2.1
+    Employee Master Record Â§2.2 (Personal / Employment / Account & Login /
+      Bank & Statutory / Salary Structure / Insurance & Benefits / Emergency Contact /
+      Documents / Assigned Assets / Leave & Attendance tabs)
+    My Profile Â§2.3 Â· My Leave Â§2.4 (see Leave module) Â· My Payslips Â§2.5 (see Payroll)
+    Team Payslips Â§2.6 (see Payroll) Â· My Documents Â§2.7 Â· Document Verification Queue Â§2.7
+    My Tickets Â§2.8 Â· My Projects & Tasks Â§2.9 Â· My Assets Â§2.10
+    Employee Dashboard Â§2.11 Â· Announcements & Notifications Â§2.12
+    Onboarding Checklist Â§2.13 Â· Onboarding â€” All Employees Â§2.13
+    Offboarding / Exit Â§2.14 Â· Exits â€” All Employees Â§2.14
+    My Tax Declarations Â§2.15 Â· Offer & Appointment Letter Â§2.16
+
+  MODULE 3 â€” ASSET MANAGEMENT (9 screens)
+    Asset Directory Â§2.1 Â· Asset Master Record Â§2.2 (Details / Assignment History /
+      Maintenance & Service / Depreciation tabs) Â· Assign/Transfer/Unassign Â§2.3
+    Maintenance & Service Log Â§2.4 Â· Depreciation & Current Value Â§2.5
+    Asset Requests Â§2.6 Â· Asset Reports Â§2.7 Â· Reclaim on Exit Â§2.8
+    Download Asset Card / List Â§2.9
+
+  MODULE 4 â€” TICKET (5 screens)
+    Ticket List Â§2.1 Â· New/Edit Ticket Â§2.2 Â· Ticket Detail/Conversation Â§2.3
+    Assign/Reassign Â§2.4 Â· Support Reports Â§2.5
+
+  MODULE 5 â€” LEAVE (5 screens)
+    My Leave Â§2.1 Â· Leave Approvals Â§2.2 Â· Leave Balance Management Â§2.3
+    Company Holiday Calendar Â§2.4 Â· Leave Reports Â§2.5
+    (Team Leave Calendar is deliberately absent â€” removed from the module entirely.)
+
+  MODULE 6 â€” PAYROLL (7 screens)
+    Run Payroll Â§2.1 Â· Payroll History Â§2.1 Â· Ad-hoc Payslip Adjustments Â§2.1a
+    My Payslips Â§2.2 Â· Payslip detail Â§2.2 Â· Team Payslips Â§2.3
+    Payroll Register Â§2.4 Â· Attendance & Time Basis Â§2.5 (Coming Soon, by design)
+
+  MODULE 7 â€” VENDOR (3 screens)
+    Vendor Directory Â§2.1 Â· Add/Edit Vendor Â§2.2 (Details / Usage tabs) Â· Vendor Usage Â§2.3
+
+  MODULE 8 â€” CUSTOMER (3 screens)
+    Customer Directory Â§2.1 Â· Add/Edit Customer Â§2.2
+    Customer 360 Â§2.3 (Overview / Contacts / Activities / Opportunities / Projects /
+      Invoices / Tickets / Files tabs)
+
+  MODULE 9 â€” OPPORTUNITY (3 screens)
+    Opportunity Pipeline Â§2.1 (Stage summary + Table views) Â· Add/Edit Opportunity Â§2.2
+    Quote Â§2.3
+
+  MODULE 10 â€” PROJECT (8 screens)
+    Project Directory Â§2.1 Â· Add/Edit Project Â§2.2 Â· Task Board Â§2.3 Â· Task Detail Â§2.4
+    Sprints Â§2.5 Â· Bugs Â§2.6 Â· Project Report Â§2.7 Â· Milestones Â§2.8 Â· Timesheets Â§2.8
+
+  MODULE 11 â€” INVOICE (6 screens)
+    Invoice Dashboard Â§2.1 Â· Invoice List Â§2.2 Â· New/Edit Invoice Â§2.3
+    Record Payment Â§2.4 Â· Raise Credit Note Â§2.5 Â· Credit Note List Â§2.5
+
+  MODULE 12 â€” EXPENSE (3 screens)
+    My Expenses Â§2.1 Â· Expense Approvals Â§2.2 Â· All Expenses / Summary Â§2.3
+
+  MODULE 13 â€” PURCHASE BILL (3 screens)
+    Purchase Bill List Â§2.1 Â· Add/Edit Purchase Bill Â§2.2 Â· Record Payment Â§2.3
+
+  MODULE 14 â€” ROLES & ACCESS / RBAC (4 screens)
+    Role Directory Â§4.1 Â· Role Permission Matrix Â§4.2
+    Individual Permission Overrides Â§4.3 Â· Permission Change Log Â§4.4
+
+  PROTOTYPE-LEVEL
+    Login screen Â· Logout (profile menu) Â· Settings (Super Admin only:
+      Appearance / Regional & Financial / System / About tabs)
+
+================================================================================
+  (2) ROLES AND WHAT EACH CAN ACCESS  (RBAC Module 14 Â§2, Â§3)
+================================================================================
+
+  Five roles exist, exactly as the RBAC module defines them, and the data model is
+  built so a sixth could be added without restructuring.
+
+  SUPER ADMIN  (Ravi Shankar) â€” 97 screens
+    Every screen in every module, unscoped. The only role that opens Roles & Access,
+    Settings, and all 19 Masters sub-masters. Gets every filter on every page, plus
+    "All financial years", "Created By" and "Last Modified By" filters that no other
+    role sees, and a show-inactive/archived toggle on every list.
+
+  MANAGER  (Vikram Iyer) â€” 50 screens Â· scope = Team (own + 5 direct reports)
+    Employee Directory + Records (direct reports, read-only), Team Payslips (amounts
+    masked), Leave Approvals, Asset Directory/Requests/Reports (team, purchase values
+    hidden), all of Ticket and Project, Opportunity, Customer, Vendor Directory
+    (bank/GST hidden), Masters â†’ Expense Types / Leave Types / Holidays / Company
+    Profile (view). NO access to Invoice, Purchase Bill, Payroll runs, or RBAC.
+
+  ACCOUNTANT  (Nisha Kulkarni) â€” 47 screens Â· scope = company-wide
+    Invoice (all 6 screens), Purchase Bill, Expense approvals + summary, Vendor,
+    Payroll (Run Payroll, Register, Ad-hoc Adjustments), Asset Directory/Records/
+    Maintenance/Depreciation/Reports, Employee Directory + Records (read-only),
+    Leave Reports, Masters â†’ Taxes (view-only by default). NO access to Ticket,
+    Project, Customer, Opportunity, onboarding/exit, or RBAC.
+
+  HR  (Fatima Sheikh) â€” 43 screens Â· scope = company-wide on people
+    Employee Directory + Records (full edit except Salary Structure, which is
+    view-only), Document Verification Queue, Onboarding and Exit (per-employee and
+    cross-employee), Offer & Appointment Letter, Leave Approvals + Balance Management
+    + Reports, Payroll Register, Asset Directory/Assign/Maintenance/Reports/Reclaim,
+    Masters â†’ Leave Types (manage) and Insurance Plans (view). Dashboard shows NO
+    revenue figures. NO access to Invoice, Expense approvals, Purchase Bill, Vendor,
+    Customer, Opportunity, Ticket, or RBAC.
+
+  EMPLOYEE  (Arun Menon) â€” 22 screens Â· scope = Own (verified: the most restrictive)
+    Every self-service screen â€” My Profile, My Leave, My Payslips, My Documents,
+    My Tickets, My Projects & Tasks, My Assets, My Expenses, My Tax Declarations,
+    Announcements, Holiday Calendar, Timesheets â€” plus Ticket List, Project
+    Directory, Task Board, Task Detail, Sprints, Bugs and Milestones scoped to their
+    own records. NO Masters, NO Invoice, NO Purchase Bill, NO Vendor, NO Customer,
+    NO Opportunity, NO Employee Directory, NO RBAC.
+
+  THE FOUR PERMISSION LAYERS ARE ALL DEMONSTRATED LIVE:
+    Layer 1 â€” screen visibility: hidden screens are absent from navigation entirely,
+              not greyed out. Reaching one by direct hash shows an explicit notice.
+    Layer 2 â€” action permissions: "+ Add" / Approve / Delete buttons appear per role.
+    Layer 3 â€” field sensitivity: Manager's Team Payslips show a dashed "hidden" pill
+              instead of Net Pay; Asset purchase/current values and Vendor bank/GST
+              columns disappear for Manager, and the matching filters go with them.
+    Layer 4 â€” scope: the filter bar's scope chip reads Own records / My team (5) /
+              Company-wide, and row sets are actually filtered accordingly.
+
+================================================================================
+  (3) ASSUMPTIONS MADE
+================================================================================
+
+  STRUCTURE
+  A1. Split across 6 linked files rather than one index.html. At 88 screens a single
+      file would be ~9,000 lines and unmaintainable; the brief permits "a small set of
+      linked pages if that's cleaner". Plain <script src> tags are used (not ES
+      modules) specifically so the prototype works from file:// with no server.
+  A2. Screens are data-driven: a registry in data.js describes each screen (columns,
+      filters, fields, roles, scope) and generic renderers draw them. This is what
+      keeps 88 screens visually identical to the approved sample.
+  A3. One Dashboard that changes by role, rather than a separate Employee Dashboard
+      and Invoice Dashboard. The Invoice module's own Â§2.1 flags that its dashboard
+      "is really a general company/admin home screen that the source spreadsheet
+      happens to file under Invoice" â€” this follows that flag.
+
+  BEHAVIOUR
+  A4. Any email/password logs in. The role dropdown on the login screen selects who
+      you sign in as; the header switcher changes role afterwards without re-login.
+  A5. Theme is held in memory only (no localStorage/sessionStorage, per the brief).
+      It therefore resets on a full page reload, which is expected.
+  A6. Actions that would write data (Save, Approve, Reject, Send, Export, Run Payroll)
+      show a toast describing exactly what the real system would do, rather than
+      silently doing nothing. No button is inert.
+  A7. Row clicks open a single representative record per module rather than a distinct
+      record per row â€” the screen design is the deliverable, not per-row state.
+  A8. Screens the specs describe as tabs on a parent record (Vendor Usage, Quote,
+      Depreciation, Assignment History) are built BOTH as the tab and as a directly
+      navigable screen, so every screen in the RBAC Â§3 inventory is reachable from
+      navigation as the brief requires.
+
+  DATA
+  A9. Mock company: "Meshrd", Chennai + Coimbatore, 148 employees, FY 2026â€“27,
+      today = 29 July 2026. Names, GSTINs, account numbers and amounts are fictional.
+  A10. Tax heads are deliberately generic â€” "Output Tax", "Retirement Fund",
+      "State Employment Levy", "Income Withholding". Per Masters Â§3.2 and the
+      standing project rule, NO tax is named in this system; Masters â†’ Taxes is a
+      dynamic list the Super Admin (or Accountant, if granted) fills in themselves.
+  A11. Sample RBAC toggle states: "Show Salary Amount to Manager" OFF, "Show Purchase
+      Value to Manager" OFF, "Show Non-Financial Dashboard Widgets to HR" OFF,
+      "Allow Manager to Edit Vendor Bank & GST Details" OFF. These are the documented
+      defaults, chosen because they make the permission layers visible.
+  A12. Badge colour mapping (Open=amber, Paid=green, Overdue=red, etc.) is a
+      prototype-level convention; the specs say "shown as a colored tag" without
+      fixing which colour.
+
+  NOT BUILT, DELIBERATELY
+  A13. Attendance & Time-Basis (Payroll Â§2.5) renders as an explicit "planned, not
+      built" screen, because the spec itself says not to build it yet. Biometric
+      attendance appears on the Employee record as a disabled "Coming Soon" option
+      for the same reason.
+  A14. Drag-and-drop on the Task Board and Opportunity pipeline is not wired; cards
+      are clickable and the Status dropdown is the documented equivalent path.
+================================================================================
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;450;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=49">
+</head>
+<body>
+
+<!-- ============================ LOGIN ============================ -->
+<div class="login-wrap" id="login" style="display:none">
+  <div class="login-art">
+    <div class="login-brand">
+      <div class="brand-mark">M</div>
+      <div><b>Meshrd</b><span>Company Management System</span></div>
+    </div>
+    <div class="login-pitch">
+      <h2>Everything the company runs on, in one place.</h2>
+      <p>Fourteen modules, one permission model. Every screen, every action, every sensitive field and every scope restriction is a setting â€” never a hardcoded rule.</p>
+      <div class="login-modules" id="loginModules"></div>
+    </div>
+    <div class="login-foot">Prototype build Â· FY 2026â€“27 Â· Chennai &amp; Coimbatore</div>
+  </div>
+
+  <div class="login-panel">
+    <form class="login-card" id="loginForm">
+      <h1>Sign in</h1>
+      <p class="lede">Credentials are pre-filled for this prototype â€” just press Sign in.</p>
+
+      <div class="field">
+        <label for="loginEmail">Email address <span class="req">*</span></label>
+        <input class="input" type="email" id="loginEmail" value="ravi.shankar@meshrd.in" placeholder="you@meshrd.in" required>
+      </div>
+      <div class="field">
+        <label for="loginPass">Password <span class="req">*</span></label>
+        <input class="input" type="password" id="loginPass" value="meshrd123" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
+        <div class="hint">Pre-filled: <b>meshrd123</b> â€” the same password works for every role.</div>
+      </div>
+      <div class="field">
+        <label for="loginRole">Sign in as</label>
+        <select class="input" id="loginRole">
+          <option value="superadmin">Super Admin â€” Ravi Shankar</option>
+          <option value="manager">Manager â€” Vikram Iyer</option>
+          <option value="accountant">Accountant â€” Nisha Kulkarni</option>
+          <option value="hr">HR â€” Fatima Sheikh</option>
+          <option value="employee">Employee â€” Arun Menon</option>
+        </select>
+        <div class="hint">Changing this swaps the email above to match. You can also switch role any time from the header once inside.</div>
+      </div>
+
+      <button class="btn primary btn-block" type="submit">Sign in</button>
+
+      <div class="login-hint">
+        <b>One-click sign-in.</b> These go straight to that role's dashboard â€” no typing at all:
+        <div class="login-roles">
+          <span class="login-role" data-login-role="superadmin">Super Admin</span>
+          <span class="login-role" data-login-role="manager">Manager</span>
+          <span class="login-role" data-login-role="accountant">Accountant</span>
+          <span class="login-role" data-login-role="hr">HR</span>
+          <span class="login-role" data-login-role="employee">Employee</span>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================ APP SHELL ============================ -->
+<div class="app" id="app" style="display:none">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">M</div>
+      <div class="brand-text"><b>Meshrd</b><span>CMS</span></div>
+    </div>
+
+    <div class="tb-left">
+      <button class="icon-btn" id="collapseBtn" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <div class="crumb" id="crumb"></div>
+    </div>
+
+    <div class="tb-spacer"></div>
+
+    <div class="searchbox">
+      <span class="s-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg></span>
+      <input type="text" placeholder="Search employees, invoices, ticketsâ€¦" aria-label="Global search">
+      <span class="kbd">Ctrl K</span>
+    </div>
+
+    <button class="fy-pill" data-go="masters.fy" title="Masters â†’ Financial Year">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+      FY <b>2026â€“27</b>
+    </button>
+
+    <button class="icon-btn bell" id="bellBtn" title="Notifications" aria-label="Notifications">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M18 8a6 6 0 1 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span class="dot">5</span>
+    </button>
+
+    <button class="icon-btn" id="themeBtn" title="Toggle light / dark theme" aria-label="Toggle theme">
+      <svg id="themeIcon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></svg>
+    </button>
+
+    <button class="role-switch" id="roleBtn" title="Switch role (RBAC Â§4.2 â€” Preview as this role)">
+      <span class="role-dot" id="roleDot"></span>
+      <span class="lbl">Viewing as</span>
+      <span class="val" id="roleVal">Super Admin</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+
+    <div class="avatar" id="avatarEl" title="Profile menu">RS</div>
+  </header>
+
+  <div class="body">
+    <aside class="sidebar">
+      <nav class="nav" id="nav"></nav>
+      <div class="nav-foot">
+        <div class="nav-item" data-go="settings" title="Settings â€” Super Admin only">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1"/></svg>
+          <span class="txt">Settings</span>
+        </div>
+        <div class="nav-item" data-logout title="Log out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+          <span class="txt">Log out</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="canvas"><div class="canvas-inner" id="canvas"></div></main>
+  </div>
+
+  <!-- popovers -->
+  <div class="scrim" id="scrim"></div>
+
+  <div class="pop" id="notifPop">
+    <div class="pop-head"><h4>Inbox</h4><div class="right"><span class="link" data-toast="All notifications marked read.">Mark all as read</span></div></div>
+    <div class="pop-tabs">
+      <div class="pop-tab on" data-ntab="notif">My Notifications</div>
+      <div class="pop-tab" data-ntab="ann">Announcements</div>
+    </div>
+    <div class="pop-list feed" id="notifList"></div>
+    <div class="pop-foot"><span class="link" data-go="emp.announce">Open Announcements &amp; Notifications â†’</span></div>
+  </div>
+
+  <div class="menu" id="roleMenu" style="right:52px">
+    <div class="menu-cap">Preview the CMS as</div>
+    <div id="roleMenuList"></div>
+    <div class="menu-sep"></div>
+    <div style="padding:6px 9px 7px;font-size:11px;color:var(--text-tertiary);line-height:1.45">
+      Mirrors RBAC Â§4.2 <b>â€œPreview as this roleâ€</b>. Switching redraws navigation (Layer&nbsp;1), actions (Layer&nbsp;2), sensitive fields (Layer&nbsp;3) and scope (Layer&nbsp;4).
+    </div>
+  </div>
+
+  <div class="menu" id="userMenu" style="right:12px"></div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script src="data.js?v=49"></script>
+<script src="app-rbac.js?v=49"></script>
+<script src="app-core.js?v=49"></script>
+<script src="app-forms.js?v=49"></script>
+<script src="app-screens.js?v=49"></script>
+<script src="app-screens2.js?v=49"></script>
+<script>window.CMS_BOOT();</script>
+</body>
+</html>

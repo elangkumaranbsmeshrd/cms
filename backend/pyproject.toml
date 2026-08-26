@@ -1,0 +1,79 @@
+[project]
+name = "meshrd-cms-backend"
+version = "0.1.0"
+description = "Meshrd Company Management System — FastAPI backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0.35",
+    # CVE-2025-65896 (GHSA-qhqw-rrw9-25rm) — asyncmy's escape_dict() only
+    # escapes dict VALUES, never dict KEYS, so a query executed with a
+    # params dict whose keys are attacker-controlled is injectable. No
+    # patched release exists as of this writing (checked via pip-audit +
+    # PyPI, 2026-08-02) and none is scheduled upstream. Not exploitable
+    # here: `grep -rn "text(\|cursor()\|connection.execute" app/` finds
+    # zero hits — every runtime query in this codebase goes through
+    # SQLAlchemy's ORM/Core query builder, which generates its own
+    # bind-parameter names from hardcoded column identifiers in the mapped
+    # model classes, never from request-supplied dict keys. Re-run that
+    # grep before adding any raw `text()` query, and re-check pip-audit
+    # periodically for a fix.
+    "asyncmy>=0.2.9",
+    "pymysql>=1.1.1",
+    "alembic>=1.13.3",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    # python-jose pulls in `ecdsa`, which carries an unpatched Minerva
+    # timing side-channel (CVE-2024-23342 / GHSA-wj6h-64fc-37mp) on
+    # ecdsa.SigningKey.sign_digest() — the upstream ecdsa project has
+    # stated side-channel attacks are out of scope and there is no planned
+    # fix. Not reachable here: app/auth/security.py hardcodes
+    # ALGORITHM = "HS256" (HMAC, stdlib `hmac`/`hashlib`) for both encode
+    # and the decode-side `algorithms=` allow-list, so jose's ECDSA
+    # backend — the only place this codebase's dependency tree calls into
+    # ecdsa — is never invoked. If ES256/ES384/ES512 support is ever added,
+    # re-evaluate.
+    "python-jose[cryptography]>=3.3",
+    "bcrypt>=4.1",
+    # Phase 7 hardening round 2 — argon2id per ARCH-2 §5.2, replacing bcrypt
+    # for all NEW password hashes. bcrypt is kept as a dependency (and
+    # app/auth/security.py keeps verifying against it) purely to read
+    # existing users' already-stored bcrypt hashes; a successful login with
+    # one transparently rehashes to argon2id, so this dependency can be
+    # dropped once no bcrypt hash remains in the users table.
+    "argon2-cffi>=23.1",
+    # Phase 7 hardening round 2 — backs app/core/rate_limit.py.
+    "redis>=5.0",
+    "python-multipart>=0.0.12",
+    "python-dateutil>=2.9",
+    "reportlab>=4.2",
+    "openpyxl>=3.1",
+    # Phase 6's Mailgun transport (app/services/email_transport.py) imports
+    # this directly at runtime — found missing from here (only ever listed
+    # under the dev/test extra below) by actually building and running this
+    # Dockerfile's image during Phase 7 hardening: a real `pip install .`
+    # with no [dev] extra would crash on the very first request touching
+    # any router that imports email_transport (most of them, transitively).
+    # The long-lived local dev venv never caught this because httpx was
+    # already installed for pytest's own use.
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "aiosqlite>=0.20",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["app"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

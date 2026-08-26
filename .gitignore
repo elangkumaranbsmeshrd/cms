@@ -1,0 +1,12 @@
+# This repo's own root-level rules. backend/.gitignore and frontend/.gitignore
+# already cover what's specific to each sub-project (venv, node_modules, .env,
+# build output, caches) — git honors nested .gitignore files regardless of
+# where the repo root is, so those stay in place unchanged.
+
+# Claude Code — personal, session-specific config; launch.json (shared dev
+# server definitions) is intentionally NOT excluded.
+.claude/settings.local.json
+
+# OS cruft
+.DS_Store
+Thumbs.db

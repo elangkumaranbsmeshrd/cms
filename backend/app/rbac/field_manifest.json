@@ -1,0 +1,1172 @@
+{
+  "customer.directory": [
+    {
+      "field_key": "address",
+      "label": "Address"
+    },
+    {
+      "field_key": "bank_account_name",
+      "label": "Bank Account Name"
+    },
+    {
+      "field_key": "bank_account_number",
+      "label": "Account Number"
+    },
+    {
+      "field_key": "bank_name",
+      "label": "Bank"
+    },
+    {
+      "field_key": "company_name",
+      "label": "Company Name"
+    },
+    {
+      "field_key": "customer_code",
+      "label": "Code"
+    },
+    {
+      "field_key": "display_name",
+      "label": "Display Name"
+    },
+    {
+      "field_key": "email",
+      "label": "Email"
+    },
+    {
+      "field_key": "gstin",
+      "label": "GSTIN"
+    },
+    {
+      "field_key": "mobile_number",
+      "label": "Mobile Number"
+    },
+    {
+      "field_key": "outstanding",
+      "label": "Outstanding"
+    },
+    {
+      "field_key": "pan",
+      "label": "PAN"
+    },
+    {
+      "field_key": "received",
+      "label": "Received"
+    },
+    {
+      "field_key": "source_id",
+      "label": "Source"
+    },
+    {
+      "field_key": "status_id",
+      "label": "Status"
+    },
+    {
+      "field_key": "total_invoiced",
+      "label": "Total Invoiced"
+    },
+    {
+      "field_key": "website",
+      "label": "Website"
+    }
+  ],
+  "employee.directory": [
+    {
+      "field_key": "email",
+      "label": "Email"
+    },
+    {
+      "field_key": "employee_code",
+      "label": "Code"
+    },
+    {
+      "field_key": "employment_status",
+      "label": "Status"
+    },
+    {
+      "field_key": "joining_date",
+      "label": "Joined"
+    },
+    {
+      "field_key": "name",
+      "label": "Name"
+    },
+    {
+      "field_key": "phone",
+      "label": "Phone"
+    }
+  ],
+  "employee.master_record": [
+    {
+      "field_key": "aadhaar_number",
+      "label": "Aadhaar"
+    },
+    {
+      "field_key": "current_address",
+      "label": "Current Address"
+    },
+    {
+      "field_key": "date_of_birth",
+      "label": "Date of Birth"
+    },
+    {
+      "field_key": "email",
+      "label": "Email"
+    },
+    {
+      "field_key": "employee_code",
+      "label": "Employee Code"
+    },
+    {
+      "field_key": "employment_status",
+      "label": "Status"
+    },
+    {
+      "field_key": "exit_date",
+      "label": "Exit Date"
+    },
+    {
+      "field_key": "first_name",
+      "label": "First Name"
+    },
+    {
+      "field_key": "gender",
+      "label": "Gender"
+    },
+    {
+      "field_key": "joining_date",
+      "label": "Joining Date"
+    },
+    {
+      "field_key": "last_name",
+      "label": "Last Name"
+    },
+    {
+      "field_key": "pan_number",
+      "label": "PAN"
+    },
+    {
+      "field_key": "phone",
+      "label": "Phone"
+    }
+  ],
+  "masters.asset_categories": [
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Category Name"
+    }
+  ],
+  "masters.bank_accounts": [
+    {
+      "field_key": "account_holder_name",
+      "label": "Account Holder Name"
+    },
+    {
+      "field_key": "account_number",
+      "label": "Account Number"
+    },
+    {
+      "field_key": "account_type",
+      "label": "Account Type"
+    },
+    {
+      "field_key": "bank_name",
+      "label": "Bank Name"
+    },
+    {
+      "field_key": "branch",
+      "label": "Branch"
+    },
+    {
+      "field_key": "confirm_account_number",
+      "label": "Confirm Account Number"
+    },
+    {
+      "field_key": "ifsc",
+      "label": "IFSC Code"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_default",
+      "label": "Default"
+    },
+    {
+      "field_key": "is_referenced",
+      "label": "Referenced"
+    },
+    {
+      "field_key": "nickname",
+      "label": "Account Nickname"
+    },
+    {
+      "field_key": "upi_id",
+      "label": "UPI ID"
+    }
+  ],
+  "masters.company_profile": [
+    {
+      "field_key": "address_type",
+      "label": "Address Type"
+    },
+    {
+      "field_key": "alternate_phone",
+      "label": "Alternate Phone"
+    },
+    {
+      "field_key": "cin",
+      "label": "CIN"
+    },
+    {
+      "field_key": "city",
+      "label": "City"
+    },
+    {
+      "field_key": "code_type",
+      "label": "Code Type"
+    },
+    {
+      "field_key": "company_type",
+      "label": "Company Type"
+    },
+    {
+      "field_key": "format",
+      "label": "Format"
+    },
+    {
+      "field_key": "generated_count",
+      "label": "Generated"
+    },
+    {
+      "field_key": "gstin",
+      "label": "GSTIN"
+    },
+    {
+      "field_key": "include_fy_in_code",
+      "label": "Include Financial Year in Code"
+    },
+    {
+      "field_key": "industry",
+      "label": "Industry / Business Type"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_primary",
+      "label": "Primary"
+    },
+    {
+      "field_key": "label",
+      "label": "Document"
+    },
+    {
+      "field_key": "legal_name",
+      "label": "Company Legal Name"
+    },
+    {
+      "field_key": "line1",
+      "label": "Address Line 1"
+    },
+    {
+      "field_key": "line2",
+      "label": "Address Line 2"
+    },
+    {
+      "field_key": "msme_registration_number",
+      "label": "MSME Registration Number"
+    },
+    {
+      "field_key": "official_email",
+      "label": "Official Email"
+    },
+    {
+      "field_key": "pan",
+      "label": "PAN"
+    },
+    {
+      "field_key": "payroll_basis",
+      "label": "Payroll Basis"
+    },
+    {
+      "field_key": "phone",
+      "label": "Phone Number"
+    },
+    {
+      "field_key": "pin_code",
+      "label": "PIN Code"
+    },
+    {
+      "field_key": "prefix",
+      "label": "Prefix"
+    },
+    {
+      "field_key": "resets_every_fy",
+      "label": "Resets Every FY"
+    },
+    {
+      "field_key": "running_number_digits",
+      "label": "Digits"
+    },
+    {
+      "field_key": "starting_number",
+      "label": "Starting Number"
+    },
+    {
+      "field_key": "starting_number_locked",
+      "label": "Locked"
+    },
+    {
+      "field_key": "state_id",
+      "label": "State"
+    },
+    {
+      "field_key": "support_email",
+      "label": "Support Email"
+    },
+    {
+      "field_key": "tan",
+      "label": "TAN"
+    },
+    {
+      "field_key": "website",
+      "label": "Website"
+    },
+    {
+      "field_key": "year_of_incorporation",
+      "label": "Year of Incorporation"
+    }
+  ],
+  "masters.customer_sources": [
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Source Name"
+    }
+  ],
+  "masters.customer_statuses": [
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Status Name"
+    }
+  ],
+  "masters.departments": [
+    {
+      "field_key": "code",
+      "label": "Department Code"
+    },
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Department Name"
+    }
+  ],
+  "masters.designations": [
+    {
+      "field_key": "department_id",
+      "label": "Linked Department"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "level_grade",
+      "label": "Level / Grade"
+    },
+    {
+      "field_key": "name",
+      "label": "Designation Name"
+    }
+  ],
+  "masters.email_configuration": [
+    {
+      "field_key": "api_key",
+      "label": "API Key (named providers)"
+    },
+    {
+      "field_key": "body",
+      "label": "Body"
+    },
+    {
+      "field_key": "delivery_status",
+      "label": "Status"
+    },
+    {
+      "field_key": "email_template_id",
+      "label": "Template"
+    },
+    {
+      "field_key": "encryption",
+      "label": "Encryption"
+    },
+    {
+      "field_key": "error_detail",
+      "label": "Error"
+    },
+    {
+      "field_key": "from_email",
+      "label": "From Email Address"
+    },
+    {
+      "field_key": "from_name",
+      "label": "From Name"
+    },
+    {
+      "field_key": "is_enabled",
+      "label": "Enabled"
+    },
+    {
+      "field_key": "password",
+      "label": "Password (Custom SMTP)"
+    },
+    {
+      "field_key": "provider",
+      "label": "Provider"
+    },
+    {
+      "field_key": "recipient_email",
+      "label": "To"
+    },
+    {
+      "field_key": "reply_to_email",
+      "label": "Reply-To Email"
+    },
+    {
+      "field_key": "sending_enabled",
+      "label": "Sending Enabled"
+    },
+    {
+      "field_key": "sent_at",
+      "label": "Sent On"
+    },
+    {
+      "field_key": "smtp_host",
+      "label": "SMTP Host"
+    },
+    {
+      "field_key": "smtp_port",
+      "label": "SMTP Port"
+    },
+    {
+      "field_key": "subject",
+      "label": "Subject Line"
+    },
+    {
+      "field_key": "subject_snapshot",
+      "label": "Subject"
+    },
+    {
+      "field_key": "template_key",
+      "label": "Template Key"
+    },
+    {
+      "field_key": "template_name",
+      "label": "Template Name"
+    },
+    {
+      "field_key": "triggered_from_module",
+      "label": "Triggered From"
+    },
+    {
+      "field_key": "triggered_from_screen",
+      "label": "Triggered From Screen"
+    },
+    {
+      "field_key": "username",
+      "label": "Username"
+    }
+  ],
+  "masters.employment_types": [
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Employment Type Name"
+    }
+  ],
+  "masters.expense_types": [
+    {
+      "field_key": "claim_type",
+      "label": "Claim Type"
+    },
+    {
+      "field_key": "default_bank_account_id",
+      "label": "Default Bank Account"
+    },
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_recurring",
+      "label": "Recurring"
+    },
+    {
+      "field_key": "name",
+      "label": "Expense Type Name"
+    },
+    {
+      "field_key": "short_code",
+      "label": "Short Code"
+    },
+    {
+      "field_key": "usage_count",
+      "label": "Used"
+    }
+  ],
+  "masters.financial_year": [
+    {
+      "field_key": "end_date",
+      "label": "To"
+    },
+    {
+      "field_key": "is_current",
+      "label": "Current"
+    },
+    {
+      "field_key": "label",
+      "label": "Financial Year"
+    },
+    {
+      "field_key": "start_date",
+      "label": "Start Date"
+    },
+    {
+      "field_key": "status",
+      "label": "Status"
+    }
+  ],
+  "masters.holidays": [
+    {
+      "field_key": "day",
+      "label": "Day"
+    },
+    {
+      "field_key": "financial_year_id",
+      "label": "Financial Year"
+    },
+    {
+      "field_key": "holiday_date",
+      "label": "Date"
+    },
+    {
+      "field_key": "holiday_type",
+      "label": "Type"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Holiday Name"
+    },
+    {
+      "field_key": "recurring_every_year",
+      "label": "Recurring Every Year"
+    }
+  ],
+  "masters.hsn_sac_codes": [
+    {
+      "field_key": "code",
+      "label": "Code"
+    },
+    {
+      "field_key": "code_type",
+      "label": "Type"
+    },
+    {
+      "field_key": "custom_gst_rate_pct",
+      "label": "Custom GST Rate (%)"
+    },
+    {
+      "field_key": "custom_gst_type",
+      "label": "Custom GST Type"
+    },
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_custom",
+      "label": "Use a one-off custom rate"
+    },
+    {
+      "field_key": "linked_tax_head_id",
+      "label": "Linked Tax"
+    }
+  ],
+  "masters.insurance_plans": [
+    {
+      "field_key": "company_contribution_monthly",
+      "label": "Company Contribution (Monthly, ₹)"
+    },
+    {
+      "field_key": "coverage_amount",
+      "label": "Coverage Amount (₹)"
+    },
+    {
+      "field_key": "employee_contribution_monthly",
+      "label": "Employee Contribution (Monthly, ₹)"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "plan_name",
+      "label": "Plan Name"
+    },
+    {
+      "field_key": "plan_type",
+      "label": "Type"
+    },
+    {
+      "field_key": "provider",
+      "label": "Provider"
+    }
+  ],
+  "masters.leave_types": [
+    {
+      "field_key": "carry_forward_allowed",
+      "label": "Carry Forward Allowed"
+    },
+    {
+      "field_key": "default_annual_quota_days",
+      "label": "Default Annual Quota (Days)"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_paid",
+      "label": "Paid Leave"
+    },
+    {
+      "field_key": "is_quota_tracked",
+      "label": "Is Quota Tracked"
+    },
+    {
+      "field_key": "max_carry_forward_days",
+      "label": "Max Carry Forward Days"
+    },
+    {
+      "field_key": "name",
+      "label": "Leave Type Name"
+    },
+    {
+      "field_key": "short_code",
+      "label": "Short Code"
+    }
+  ],
+  "masters.payment_modes": [
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Mode Name"
+    },
+    {
+      "field_key": "requires_reference_number",
+      "label": "Requires Reference Number"
+    }
+  ],
+  "masters.service_categories": [
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Service Category Name"
+    }
+  ],
+  "masters.taxes": [
+    {
+      "field_key": "applies_from",
+      "label": "Applies From"
+    },
+    {
+      "field_key": "applies_if_base_at_or_below",
+      "label": "Applies If Base Is At Or Below (₹)"
+    },
+    {
+      "field_key": "applies_until",
+      "label": "Applies Until"
+    },
+    {
+      "field_key": "authority_reference_label",
+      "label": "Authority Reference Label"
+    },
+    {
+      "field_key": "band_from",
+      "label": "Band From (₹)"
+    },
+    {
+      "field_key": "band_label",
+      "label": "Band Label (optional)"
+    },
+    {
+      "field_key": "band_to",
+      "label": "Band To (blank = and above)"
+    },
+    {
+      "field_key": "certificate_expected",
+      "label": "Certificate Expected from Counterparty"
+    },
+    {
+      "field_key": "cgst_rate_pct",
+      "label": "CGST Rate (%)"
+    },
+    {
+      "field_key": "component_name",
+      "label": "Component Name"
+    },
+    {
+      "field_key": "creates_onward_liability",
+      "label": "Creates an Onward Liability"
+    },
+    {
+      "field_key": "declaration_cap",
+      "label": "Declaration Cap (₹)"
+    },
+    {
+      "field_key": "default_calculated_on",
+      "label": "Default Calculated On"
+    },
+    {
+      "field_key": "deposit_due_days_after_period_end",
+      "label": "Deposit Due — Days After Period End"
+    },
+    {
+      "field_key": "fixed_amount",
+      "label": "Fixed Amount (₹)"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "is_arithmetic_locked",
+      "label": "Locked"
+    },
+    {
+      "field_key": "liability_arises_on",
+      "label": "Liability Arises On"
+    },
+    {
+      "field_key": "notes",
+      "label": "Notes"
+    },
+    {
+      "field_key": "period_aligns_to",
+      "label": "Period Aligns To"
+    },
+    {
+      "field_key": "print_label",
+      "label": "Print Label"
+    },
+    {
+      "field_key": "rate",
+      "label": "Rate"
+    },
+    {
+      "field_key": "rate_or_amount",
+      "label": "Rate (%) or Amount (₹)"
+    },
+    {
+      "field_key": "rate_pct",
+      "label": "Rate (%)"
+    },
+    {
+      "field_key": "relief_amount",
+      "label": "Relief Amount (not needed for Reduce to Zero)"
+    },
+    {
+      "field_key": "relief_name",
+      "label": "Relief Name"
+    },
+    {
+      "field_key": "relief_rules",
+      "label": "Relief Rules — Payroll — Income Tax scope only. Saved when the head is created."
+    },
+    {
+      "field_key": "relief_type",
+      "label": "Relief Type"
+    },
+    {
+      "field_key": "remittance_period",
+      "label": "Remittance Period"
+    },
+    {
+      "field_key": "remitted_to_authority",
+      "label": "Remitted To (Authority)"
+    },
+    {
+      "field_key": "scope",
+      "label": "Scope"
+    },
+    {
+      "field_key": "sequence_no",
+      "label": "Sequence #"
+    },
+    {
+      "field_key": "sgst_rate_pct",
+      "label": "SGST Rate (%)"
+    },
+    {
+      "field_key": "share_pct",
+      "label": "Share of Total (%)"
+    },
+    {
+      "field_key": "short_code",
+      "label": "Short Code"
+    },
+    {
+      "field_key": "slab_application",
+      "label": "Slab Application"
+    },
+    {
+      "field_key": "slab_bands",
+      "label": "Slab Bands — Slab method only. Contiguous, with exactly one open-ended \"and above\" band, last in sequence. Saved when the head is created."
+    },
+    {
+      "field_key": "split_components",
+      "label": "Split Components — optional on any method; shares must sum to 100. Saved when the head is created."
+    },
+    {
+      "field_key": "tax_name",
+      "label": "Tax Name"
+    },
+    {
+      "field_key": "tax_type",
+      "label": "Tax Type"
+    },
+    {
+      "field_key": "usage_count",
+      "label": "Usage Count"
+    },
+    {
+      "field_key": "withholding_directions",
+      "label": "Withholding Direction"
+    }
+  ],
+  "masters.ticket_categories": [
+    {
+      "field_key": "description",
+      "label": "Description"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Category Name"
+    }
+  ],
+  "masters.units_of_measure": [
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "name",
+      "label": "Unit Name"
+    }
+  ],
+  "masters.work_week_hours": [
+    {
+      "field_key": "allow_compensatory_hours",
+      "label": "Allow Compensatory Hours"
+    },
+    {
+      "field_key": "allow_makeup_on_mandatory_holiday",
+      "label": "Allow Make-Up on a Mandatory Holiday"
+    },
+    {
+      "field_key": "allow_makeup_on_week_off",
+      "label": "Allow Make-Up on a Week Off"
+    },
+    {
+      "field_key": "applies_to",
+      "label": "Applies To"
+    },
+    {
+      "field_key": "compensation_window_days",
+      "label": "Compensation Window (days)"
+    },
+    {
+      "field_key": "count_overtime_beyond_net",
+      "label": "Count Overtime Beyond Net"
+    },
+    {
+      "field_key": "custom_saturday_hours",
+      "label": "Custom Saturday Hours"
+    },
+    {
+      "field_key": "cycle_type",
+      "label": "Cycle Type"
+    },
+    {
+      "field_key": "department_id",
+      "label": "Applies To — Department"
+    },
+    {
+      "field_key": "designation_id",
+      "label": "Applies To — Designation"
+    },
+    {
+      "field_key": "effective_from",
+      "label": "Effective From"
+    },
+    {
+      "field_key": "employment_type_id",
+      "label": "Applies To — Employment Type"
+    },
+    {
+      "field_key": "end_day",
+      "label": "End Day"
+    },
+    {
+      "field_key": "excess_hours_become",
+      "label": "Excess Hours Become"
+    },
+    {
+      "field_key": "financial_year_id",
+      "label": "Financial Year"
+    },
+    {
+      "field_key": "grace_window_minutes",
+      "label": "Grace Window (minutes)"
+    },
+    {
+      "field_key": "gross_hours_per_day",
+      "label": "Gross Hours per Day"
+    },
+    {
+      "field_key": "half_day_threshold_hours",
+      "label": "Half Day Threshold (hours)"
+    },
+    {
+      "field_key": "hours_required",
+      "label": "Hours Required"
+    },
+    {
+      "field_key": "is_active",
+      "label": "Status"
+    },
+    {
+      "field_key": "make_up_day_chosen_by",
+      "label": "Make-Up Day Chosen By"
+    },
+    {
+      "field_key": "mandatory_holiday_overrides_saturday",
+      "label": "Mandatory Holiday Overrides Saturday"
+    },
+    {
+      "field_key": "max_comp_hours_per_month",
+      "label": "Max Compensatory Hours per Month"
+    },
+    {
+      "field_key": "month",
+      "label": "Month"
+    },
+    {
+      "field_key": "net_working_hours_per_day",
+      "label": "Net h/day"
+    },
+    {
+      "field_key": "notify_affected_employees",
+      "label": "Notify Affected Employees"
+    },
+    {
+      "field_key": "override_to",
+      "label": "Override To"
+    },
+    {
+      "field_key": "pattern_says",
+      "label": "Pattern Says"
+    },
+    {
+      "field_key": "policy_name",
+      "label": "Policy Name"
+    },
+    {
+      "field_key": "reason",
+      "label": "Reason"
+    },
+    {
+      "field_key": "salary_credit_day",
+      "label": "Salary Credit Day"
+    },
+    {
+      "field_key": "saturday_date",
+      "label": "Saturday"
+    },
+    {
+      "field_key": "saturday_rule",
+      "label": "Saturday Rule"
+    },
+    {
+      "field_key": "start_day",
+      "label": "Start Day"
+    },
+    {
+      "field_key": "uncompensated_shortfall_becomes",
+      "label": "Uncompensated Shortfall Becomes"
+    },
+    {
+      "field_key": "unpaid_break_hours",
+      "label": "Unpaid Break (hours)"
+    },
+    {
+      "field_key": "weekly_hour_target",
+      "label": "Weekly Hour Target"
+    },
+    {
+      "field_key": "weekly_off_days",
+      "label": "Weekly Off Day(s)"
+    },
+    {
+      "field_key": "which",
+      "label": "Which"
+    },
+    {
+      "field_key": "work_week_policy_id",
+      "label": "Work Week Policy"
+    },
+    {
+      "field_key": "working_saturday_hours_mode",
+      "label": "Hours on a Working Saturday"
+    }
+  ],
+  "vendor.directory": [
+    {
+      "field_key": "address_city",
+      "label": "City"
+    },
+    {
+      "field_key": "address_pin_code",
+      "label": "PIN Code"
+    },
+    {
+      "field_key": "address_state",
+      "label": "State"
+    },
+    {
+      "field_key": "address_street",
+      "label": "Street"
+    },
+    {
+      "field_key": "bank_account_name",
+      "label": "Bank Account Name"
+    },
+    {
+      "field_key": "bank_account_number",
+      "label": "Account Number"
+    },
+    {
+      "field_key": "bank_name",
+      "label": "Bank"
+    },
+    {
+      "field_key": "contact_email",
+      "label": "Contact Email"
+    },
+    {
+      "field_key": "contact_phone",
+      "label": "Contact Phone"
+    },
+    {
+      "field_key": "expense_count",
+      "label": "Expense Claims"
+    },
+    {
+      "field_key": "gstin",
+      "label": "GSTIN"
+    },
+    {
+      "field_key": "has_usage_history",
+      "label": "Has Usage History"
+    },
+    {
+      "field_key": "ifsc_code",
+      "label": "IFSC Code"
+    },
+    {
+      "field_key": "outstanding_amount",
+      "label": "Outstanding"
+    },
+    {
+      "field_key": "pan",
+      "label": "PAN"
+    },
+    {
+      "field_key": "payment_terms_days",
+      "label": "Payment Terms (Days)"
+    },
+    {
+      "field_key": "purchase_bill_count",
+      "label": "Purchase Bills"
+    },
+    {
+      "field_key": "status",
+      "label": "Status"
+    },
+    {
+      "field_key": "total_spend",
+      "label": "Total Spend"
+    },
+    {
+      "field_key": "vendor_category",
+      "label": "Category"
+    },
+    {
+      "field_key": "vendor_name",
+      "label": "Vendor Name"
+    }
+  ]
+}

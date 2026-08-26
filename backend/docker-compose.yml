@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: meshrd_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_password
+      MYSQL_DATABASE: meshrd_cms
+      MYSQL_USER: meshrd
+      MYSQL_PASSWORD: meshrd_dev_password
+    ports:
+      - "3306:3306"
+    # utf8mb4 + InnoDB is the ARCH-1 D0 default. CHECK constraints require
+    # 8.0.16+, comfortably satisfied by 8.4. `default-authentication-plugin`
+    # was REMOVED in 8.4 (caching_sha2_password is now the only default) —
+    # do not add it back.
+    #
+    # `log-bin-trust-function-creators` is DEV ONLY. Creating a TRIGGER needs
+    # SUPER (or this flag) once binary logging is on, since a trigger can
+    # behave non-deterministically on a replica. The production fix is NOT
+    # this flag — it is running migrations under a separate, privileged
+    # deploy-only DB user (holding TRIGGER + routine-creation) distinct from
+    # the app's runtime user (SELECT/INSERT/UPDATE/DELETE only). See ARCH-2.
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --log-bin-trust-function-creators=1
+    volumes:
+      - meshrd_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_dev_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Phase 7 hardening round 2 — backs app/core/rate_limit.py's /auth/login
+  # brute-force counters. No persistence needed (AOF/RDB off): losing the
+  # counters on restart just means the rate-limit window resets, never a
+  # correctness problem the way losing MySQL data would be.
+  redis:
+    image: redis:7-alpine
+    container_name: meshrd_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  meshrd_mysql_data:

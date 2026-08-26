@@ -1,0 +1,67 @@
+# Phase 7 hardening (BUILD-PROMPT.md §13's "Restore from backup verified" gate
+# is covered by backend/scripts/restore_drill.sh, run manually/on a schedule
+# against real infra — this workflow is the OTHER half: every push/PR gets
+# the same import-check + full pytest run this project has run manually
+# after every phase all along. No live remote exists yet to have actually
+# run this workflow (git remote -v is empty in this repo) — written and
+# reviewed for correctness, not yet exercised by real GitHub Actions.
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_dev_password
+          MYSQL_DATABASE: meshrd_cms
+          MYSQL_USER: meshrd
+          MYSQL_PASSWORD: meshrd_dev_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot_dev_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Import check
+        env:
+          DATABASE_URL: mysql+asyncmy://meshrd:meshrd_dev_password@127.0.0.1:3306/meshrd_cms
+          DATABASE_URL_SYNC: mysql+pymysql://meshrd:meshrd_dev_password@127.0.0.1:3306/meshrd_cms
+          SECRET_KEY: ci-only-not-a-real-secret
+          CREDENTIAL_ENCRYPTION_KEY: 8pO6nS8x4jL0kQeD3zC7vF1yB9tH2mR5wA6uN0iG4sE=
+        run: python -c "import app.main; print('IMPORT OK')"
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: mysql+asyncmy://meshrd:meshrd_dev_password@127.0.0.1:3306/meshrd_cms
+          DATABASE_URL_SYNC: mysql+pymysql://meshrd:meshrd_dev_password@127.0.0.1:3306/meshrd_cms
+          SECRET_KEY: ci-only-not-a-real-secret
+          CREDENTIAL_ENCRYPTION_KEY: 8pO6nS8x4jL0kQeD3zC7vF1yB9tH2mR5wA6uN0iG4sE=
+        run: alembic upgrade head
+
+      - name: pytest
+        run: python -m pytest -q

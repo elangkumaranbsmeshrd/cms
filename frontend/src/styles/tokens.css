@@ -1,0 +1,87 @@
+/* Ported verbatim from prototype/app.css §1 (the approved visual baseline —
+   ARCH-3 §5 states this port should be zero-re-derivation). Do not hand-edit
+   a value here without updating the prototype too, or the two diverge. */
+
+:root {
+  --canvas: #f1f2f5;
+  --surface: #ffffff;
+  --surface-sunk: #f7f8fa;
+  --surface-raised: #ffffff;
+  --border: #e0e3e9;
+  --border-strong: #c7ccd6;
+  --hairline: #eaecf0;
+
+  --text-primary: #14171d;
+  --text-secondary: #545b68;
+  --text-tertiary: #878e9c;
+  --text-inverse: #ffffff;
+
+  --accent: #2a4bd7;
+  --accent-hover: #1f3ab0;
+  --accent-subtle: #eaeeff;
+  --accent-line: #c3cffb;
+
+  --success: #05704a; --success-bg: #e4f5ed; --success-line: #a8ddc6;
+  --warning: #8f5300; --warning-bg: #fdf0dd; --warning-line: #f0cf9c;
+  --danger: #ad2419;  --danger-bg: #fbe8e6;  --danger-line: #f0b8b3;
+  --info: #0d6088;    --info-bg: #e4f2f9;    --info-line: #a9d4e8;
+  --purple: #5b3aa6;  --purple-bg: #efe9fb;  --purple-line: #c9b8ec;
+  --neutral-bg: #edeff3; --neutral-text: #545b68; --neutral-line: #d8dce3;
+
+  --sidebar-bg: #14171e;
+  --sidebar-bg-hover: #1d222c;
+  --sidebar-bg-active: #222a3a;
+  --sidebar-text: #959daf;
+  --sidebar-text-active: #ffffff;
+  --sidebar-border: #232833;
+  --sidebar-muted: #666e80;
+
+  --shadow-sm: 0 1px 2px rgba(16, 19, 26, .06);
+  --shadow-md: 0 6px 20px rgba(16, 19, 26, .10), 0 1px 3px rgba(16, 19, 26, .07);
+  --shadow-lg: 0 20px 48px rgba(16, 19, 26, .22), 0 2px 8px rgba(16, 19, 26, .10);
+
+  --r-sm: 4px; --r-md: 6px; --r-lg: 10px;
+  --topbar-h: 52px;
+  --sidebar-w: 246px;
+  --sidebar-w-collapsed: 56px;
+
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", SFMono-Regular, Consolas, Menlo, monospace;
+}
+
+/* "Graphite sidebar": near-black even in LIGHT mode (--sidebar-bg above),
+   going to pure near-black in dark mode where it merges with --canvas. */
+:root[data-theme="dark"] {
+  --canvas: #0a0c11;
+  --surface: #111419;
+  --surface-sunk: #0d1015;
+  --surface-raised: #161a21;
+  --border: #232830;
+  --border-strong: #333a46;
+  --hairline: #1d2128;
+
+  --text-primary: #eceef2;
+  --text-secondary: #9fa7b6;
+  --text-tertiary: #6b7382;
+  --text-inverse: #0a0c11;
+
+  --accent: #7592ff;
+  --accent-hover: #8fa6ff;
+  --accent-subtle: #18203a;
+  --accent-line: #2c3a63;
+
+  --success: #4fd39c; --success-bg: #0f2b21; --success-line: #1d4a39;
+  --warning: #efab55; --warning-bg: #31220a; --warning-line: #543c13;
+  --danger: #f2938c;  --danger-bg: #341714;  --danger-line: #5a2823;
+  --info: #63bce4;    --info-bg: #0d2632;    --info-line: #1b4356;
+  --purple: #b39bf0;  --purple-bg: #1e1733;  --purple-line: #3a2c5e;
+  --neutral-bg: #1a1e26; --neutral-text: #9fa7b6; --neutral-line: #2a303a;
+
+  --sidebar-bg: #0a0c11;
+  --sidebar-bg-hover: #161a21;
+  --sidebar-bg-active: #1a2130;
+  --sidebar-border: #1a1e25;
+
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, .65), 0 2px 8px rgba(0, 0, 0, .5);
+}
