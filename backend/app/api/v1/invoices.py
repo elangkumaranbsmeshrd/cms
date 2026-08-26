@@ -605,6 +605,27 @@ async def update_invoice(
     # describes never send it, and must keep working.
     if "project_id" in body.model_fields_set and body.project_id != invoice.project_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Project cannot be changed after creation")
+    # invoice_date was ACCEPTED and then silently dropped: the caller got a 200
+    # and the old date back. Found by the Layer 2 round-trip check, and exactly
+    # the class of bug that check exists for — accepted, acknowledged, not
+    # stored.
+    #
+    # Refused rather than applied, because the rest of this route already
+    # treats the date as immutable and would be inconsistent if it moved:
+    # invoice_number embeds the FY label and was allocated from the FY current
+    # at creation, financial_year_id is snapshotted alongside it, and the tax
+    # recomputation below deliberately effective-dates against
+    # invoice.invoice_date rather than the body. Letting the date cross into
+    # another financial year would leave the number, the snapshot and the date
+    # disagreeing — and could walk the invoice into or out of a locked year.
+    # Same "locked after creation" treatment as customer_id and project_id
+    # above; the model_fields_set guard means omitting the field still reads as
+    # "leave it alone".
+    if "invoice_date" in body.model_fields_set and body.invoice_date != invoice.invoice_date:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invoice Date cannot be changed after creation — the invoice number and financial year were issued from it",
+        )
 
     old_subtotal = invoice.subtotal
     old_tax = invoice.tax_amount

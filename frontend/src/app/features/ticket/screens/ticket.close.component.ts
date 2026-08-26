@@ -26,10 +26,15 @@ const SCREEN = 'ticket.list';
  * 'close' collides with PolicyStore's own ALWAYS_ALLOWED read-only-verb
  * regex (policy.store.ts) — same reasoning as ticket.detail.component.ts's
  * own canClose(), reading the resolved action set directly rather than
- * calling policy.can(SCREEN, 'close') (which would wrongly return true for
- * anyone who can merely open ticket.list, e.g. an Employee — seed.py
- * restricts 'close' to SUPER_ADMIN/MANAGER). The backend re-checks this too
- * (update_status's own `perms.can("close")`, api/v1/tickets.py) regardless.
+ * calling policy.can(SCREEN, 'close').
+ *
+ * HISTORICAL: 'close' used to sit in that regex's verb list, so
+ * policy.can(SCREEN, 'close') returned true for anyone who could merely open
+ * ticket.list, including an Employee, despite seed.py restricting it to
+ * SUPER_ADMIN/MANAGER. Layer 4 caught it and the verb has since been removed,
+ * so can() is now correct here too. This direct read stays because it is the
+ * more explicit expression of the same check. The backend re-checks regardless
+ * (update_status's own `perms.can("close")`, api/v1/tickets.py).
  */
 @Component({
   selector: 'app-ticket-close',

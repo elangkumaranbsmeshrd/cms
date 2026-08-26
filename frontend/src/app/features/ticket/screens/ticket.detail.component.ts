@@ -355,12 +355,15 @@ export class TicketDetailComponent {
     return this.policy.can(SCREEN, 'reassign');
   }
 
-  /** 'close' collides with PolicyStore's own ALWAYS_ALLOWED read-only-verb
-   * regex (policy.store.ts) — `.can(SCREEN, 'close')` would return true for
-   * anyone who can merely open this screen, including an Employee, regardless
-   * of the real per-role grant (seed.py restricts 'close' to SUPER_ADMIN/
-   * MANAGER). Reading the resolved action set directly is the only correct
-   * client-side check; the backend still 403s correctly either way
+  /** Reads the resolved action set directly rather than calling
+   * .can(SCREEN, 'close').
+   *
+   * HISTORICAL: 'close' used to be in PolicyStore's ALWAYS_ALLOWED verb list,
+   * so .can(SCREEN, 'close') returned true for anyone who could merely open
+   * this screen — an Employee included — regardless of the real per-role grant
+   * (seed.py restricts it to SUPER_ADMIN/MANAGER). Layer 4 caught it and the
+   * verb has been removed, so can() is correct here now too; this direct read
+   * stays as the more explicit form. The backend 403s either way
    * (update_status checks `perms.can("close")` manually in the function
    * body, api/v1/tickets.py).
    */

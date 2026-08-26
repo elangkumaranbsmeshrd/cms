@@ -884,6 +884,22 @@ async def confirm_payroll_run(
         # MissingGreenlet this was already worked around for once doesn't
         # reappear from a SECOND, later expiry this function didn't know to
         # guard against.
+        # FLUSH BEFORE REFRESH. row.status = "PROCESSED" above is still pending
+        # at this point, and Session.refresh() expires the instance inside a
+        # no_autoflush block — so without this, the refresh DISCARDS that write
+        # and re-reads the old status from the database.
+        #
+        # It only ever appeared to work by accident: the three db.get() calls
+        # above autoflush, which happened to persist it on the way past. An
+        # employee with no department, designation AND employment type makes
+        # none of those calls, so nothing flushes and the status is silently
+        # lost — for that employee only.
+        #
+        # What that costs is not cosmetic. payroll_run_employees.status is what
+        # the A116 double-payment guard reads to skip an already-processed
+        # employee on a second run for the same period. Left unpersisted, the
+        # guard sees nothing to skip and the employee can be PAID TWICE.
+        await db.flush()
         await db.refresh(row)
 
         payslip = Payslip(
