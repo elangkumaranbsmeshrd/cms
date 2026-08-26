@@ -5,10 +5,10 @@ import { AssetAssignmentHistoryComponent } from './asset.assignment-history.comp
 import { AssetAttachmentsComponent } from './asset.attachments.component';
 import { AssetMaintenanceLogComponent } from './asset.maintenance-log.component';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
-const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
+const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 
 // Same current_value string-or-number handling as

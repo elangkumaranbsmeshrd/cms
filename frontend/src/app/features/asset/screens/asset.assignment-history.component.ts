@@ -12,8 +12,8 @@ const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 // performed_by is a raw platform User id, distinct from employee_id above —
 // resolved via the cross-cutting GET /users.
 const USER_REF = { endpoint: '/users', labelKey: 'name' };
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 const SCREEN = 'asset.directory';
 
 /** §2 Tab: Assignment History (asset.directory record, bespoke — a

@@ -9,9 +9,9 @@ import { formatMoney } from '../../../shared/screens/cell-format';
 import { IconComponent } from '../../../shared/ui/icon.component';
 import { ASSET_STATUS_OPTIONS } from '../asset.api';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 const SCREEN = 'asset.reports';
 

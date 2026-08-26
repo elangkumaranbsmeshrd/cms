@@ -186,7 +186,7 @@ export const AGEING_BUCKET_OPTIONS = [
 export const VENDOR_ACTIVE_REF = { endpoint: '/vendors?is_active=true&approval_status=approved', labelKey: 'vendor_name' };
 // The List screen's own Vendor filter — every vendor regardless of active
 // state, so a bill against a since-deactivated vendor can still be found.
-export const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
+export const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
 // FIXED 2026-08-11 (RBAC audit): the three refs below used to hit the real
 // masters.bank_accounts/payment_modes/hsn_sac_codes SCREEN endpoints, which
 // 404'd for Accountant (seeded "none"/"view"-only-for-other-reasons there) —
@@ -198,7 +198,7 @@ export const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
 // same "not more sensitive than what the caller can already see" precedent
 // as CUSTOMER_PICKER_REF/VENDOR_ACTIVE_REF above.
 export const BANK_ACCOUNT_REF = { endpoint: '/masters/bank-accounts/options', labelKey: 'label' };
-export const TAX_REF = { endpoint: '/masters/taxes', labelKey: 'tax_name' };
+export const TAX_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
 export const HSN_REF = { endpoint: '/masters/hsn-sac-codes/options', labelKey: 'label' };
 export const PAYMENT_MODE_REF = { endpoint: '/masters/payment-modes/options', labelKey: 'label' };
 // GET /expenses ('expense.all_expenses' — ACCOUNTANT is seeded "full" there
@@ -213,4 +213,4 @@ export const EXPENSE_CLAIM_REF = { endpoint: '/expenses', labelKey: 'description
 // last-modified-by filter in this codebase uses (invoice.api.ts's own
 // USER_REF, my-leave.component.ts, asset.requests.list.config.ts).
 export const USER_REF = { endpoint: '/users', labelKey: 'name' };
-export const PURCHASE_BILL_FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+export const PURCHASE_BILL_FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };

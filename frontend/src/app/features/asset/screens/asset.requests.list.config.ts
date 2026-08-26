@@ -3,7 +3,7 @@ import { AssetRequestRow } from '../asset.api';
 
 const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 const ASSET_REF = { endpoint: '/assets' };
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 
 // AssetRequestWrite.request_type validator — REPAIR|DAMAGE_REPORT|RETURN
 // only. There is deliberately no "Transfer" request type: Transfer is only

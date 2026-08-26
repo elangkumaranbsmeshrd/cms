@@ -8,7 +8,7 @@ import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { badgeClass, formatMoney, humanizeEnum } from '../../../shared/screens/cell-format';
 import { AssetMaintenanceRow } from '../asset.api';
 
-const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
+const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
 const SCREEN = 'asset.maintenance';
 
 /** §2 Tab: Maintenance & Service Log — per-asset (asset.directory record,

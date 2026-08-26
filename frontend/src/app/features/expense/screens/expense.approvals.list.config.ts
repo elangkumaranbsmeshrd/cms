@@ -88,7 +88,7 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
     // low-stakes limitation of the generic ListScreenConfig shape rather
     // than a bespoke workaround, matching screen.types.ts's own precedent
     // for filters that can't fully express a screen's real constraint.
-    { key: 'expense_type_id', label: 'Expense Type', kind: 'select', transport: 'server', allLabel: 'All Expense Types', optionsRef: { endpoint: '/masters/expense-types' } },
+    { key: 'expense_type_id', label: 'Expense Type', kind: 'select', transport: 'server', allLabel: 'All Expense Types', optionsRef: { endpoint: '/masters/expense-types/options', labelKey: 'label' } },
     // Vendor/Department/Amount/Submitted-date-range/Has-Receipt/Pending-Days
     // all gained real ?params= on GET /expenses/approvals this revision
     // (expenses.py's list_pending_approvals) — closing exactly the gap
@@ -96,8 +96,8 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
     // most needed... the toggle itself is also not yet built" (Section 6.1's
     // "Require a Receipt Before Approval" toggle is now built too, see
     // toggles.py's ACTION_TOGGLE_GATES).
-    { key: 'vendor_id', label: 'Vendor', kind: 'select', transport: 'server', allLabel: 'All Vendors', optionsRef: { endpoint: '/vendors', labelKey: 'vendor_name' } },
-    { key: 'department_id', label: 'Department', kind: 'select', transport: 'server', allLabel: 'All Departments', optionsRef: { endpoint: '/masters/departments' } },
+    { key: 'vendor_id', label: 'Vendor', kind: 'select', transport: 'server', allLabel: 'All Vendors', optionsRef: { endpoint: '/vendors/options', labelKey: 'label' } },
+    { key: 'department_id', label: 'Department', kind: 'select', transport: 'server', allLabel: 'All Departments', optionsRef: { endpoint: '/masters/departments/options', labelKey: 'label' } },
     { key: 'amount', label: 'Amount', kind: 'numberrange', transport: 'server', allLabel: 'Any', param: 'amount' },
     { key: 'submitted', label: 'Submitted', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'submitted' },
     { key: 'pending_days', label: 'Pending At Least (Days)', kind: 'number', transport: 'server', allLabel: 'Any' },
@@ -125,7 +125,7 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
     // (not 'status'): the prototype's own U.chip() treatment for this column
     // — a plain neutral tag, since Claim Type isn't a lifecycle/status value.
     { key: 'claim_type', header: 'Claim Type', type: 'chip', staticOptions: CLAIM_TYPE_OPTIONS },
-    { key: 'vendor_id', header: 'Vendor', ref: { endpoint: '/vendors', labelKey: 'vendor_name' } },
+    { key: 'vendor_id', header: 'Vendor', ref: { endpoint: '/vendors/options', labelKey: 'label' } },
     // PurchaseBillOut's real field is purchase_bill_code (confirmed against
     // purchase_bills.py's own non-export response, same field expense.api.ts's
     // PurchaseBillOption already uses) — RefDataService.label() is generic

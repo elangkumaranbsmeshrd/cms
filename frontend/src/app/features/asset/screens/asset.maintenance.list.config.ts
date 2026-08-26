@@ -1,9 +1,9 @@
 import { ListScreenConfig } from '../../../shared/screens/screen.types';
 import { AssetMaintenanceRow } from '../asset.api';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
 // §0.7: a plain {endpoint:'/assets'} works cleanly for an asset picker —
 // AssetOut.name is a real top-level field, unlike Employee's split
 // first_name/last_name. Two separate labelKeys against the SAME endpoint

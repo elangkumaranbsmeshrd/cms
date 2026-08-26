@@ -2,7 +2,7 @@ import { ListScreenConfig } from '../../../shared/screens/screen.types';
 import { formatMoney } from '../../../shared/screens/cell-format';
 import { ASSET_STATUS_OPTIONS, AssetRow } from '../asset.api';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 // §0.3: GET /employees returns first_name/last_name as separate fields, no
 // {id,name} shape — labelKey: 'first_name' is the established workaround
 // used repeatedly across every other already-built module.
@@ -10,8 +10,8 @@ const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 // §0.7: CompanyAddress has no `name` field at all — line1 is the imperfect
 // but functional stand-in; the endpoint takes no query params, so this
 // fetches unfiltered, same as every other RefLookup.
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 
 // current_value (AssetOut.current_value: Decimal-as-string, OR the literal
 // "Not available") can't use ColumnDef's own `type: 'money'` — formatMoney()'s

@@ -1,10 +1,10 @@
 import { FormScreenConfig } from '../../../shared/screens/screen.types';
 import { AssetRow } from '../asset.api';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
-const VENDOR_REF = { endpoint: '/vendors', labelKey: 'vendor_name' };
-const LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'line1' };
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
+const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
+const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
 
 // §0.8/§2 — "+ Add Asset" create flow. record-screen.component.ts has no

@@ -9,7 +9,7 @@ import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { AssetAssignmentHistoryRow, AssetRow } from '../asset.api';
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 const SCREEN = 'asset.reclaim';
 
 interface EmployeeNameRow {
