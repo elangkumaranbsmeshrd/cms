@@ -85,20 +85,24 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     ck_tax_heads_slab disagrees and always has) — was a raw 500, not a clean
     error a form could show next to the field that caused it.
 
-    The one collision worth naming outright is ux_tax_heads_scope_name: it is
-    by far the most common rejection here (every Duplicate of a head under its
-    own name hits it), and the generic fallback sends the reader off to check
-    "the figures required for this Tax Type", which is not what went wrong.
-    MySQL puts the key name in the 1062 text, so keying off it needs no
-    pre-flight SELECT and — unlike a Python-side uniqueness check — stops
-    firing on its own the day the index is redefined to include a date
-    component, instead of freezing today's schema limitation into the router.
+    The one collision worth naming outright is the scope+name uniqueness key:
+    the generic fallback sends the reader off to check "the figures required
+    for this Tax Type", which is not what went wrong. MySQL puts the key name
+    in the 1062 text, so keying off it needs no pre-flight SELECT.
+
+    Migration 0016 has since widened that key to (scope, tax_name,
+    applies_from), which is what made Duplicate usable at all — before it, the
+    "figures are locked, use Duplicate instead" 409 pointed at an action the
+    schema forbade, so the user had nowhere to go. The substring test below
+    still matches the widened key's name, deliberately: a same-scope,
+    same-name, same-date collision is now a genuine accidental duplicate and
+    still deserves its own clear message rather than the generic fallback.
     """
     logger.warning("db constraint violation: %s", exc.orig)
     if "ux_tax_heads_scope_name" in str(exc.orig):
         return HTTPException(
             status.HTTP_409_CONFLICT,
-            detail="A tax head with this Tax Name already exists in this Scope — the schema allows only one head per Scope + Tax Name, with no date component, so a new dated version cannot reuse the name. Give this version a distinct Tax Name.",
+            detail="A tax head with this Tax Name already exists in this Scope, effective from this same date. To supersede it, give this version a later 'Applies From' date; to keep both in force from the same date, give this one a distinct Tax Name.",
         )
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 

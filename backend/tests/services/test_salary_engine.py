@@ -96,6 +96,33 @@ def test_variable_pay_annual_not_multiplied():
     assert totals.variable_pay_annualised == d("40000.00")
 
 
+# ------------------------------------------------------------------- LTA in CTC
+# Employee §2.2 counts LTA in Gross Monthly only "if paid monthly", so an ANNUAL
+# LTA is correctly absent from gross_monthly. It is still real money the company
+# pays, so it has to reach annual_ctc some other way — annualising gross alone
+# used to drop it entirely and understate every affected employee's CTC.
+def test_annual_lta_is_added_to_annual_ctc():
+    totals = compute_totals(
+        gross_monthly=d("50000"), variable_pay_amount=d("0"), variable_pay_frequency="ANNUAL",
+        statutory_lines=[], insurance_employee_contribution_monthly=d("0"), insurance_employer_contribution_monthly=d("0"),
+        basic_salary_monthly=d("30000"), dearness_allowance_monthly=d("0"),
+        lta_amount=d("12000"), lta_payout_basis="ANNUAL",
+    )
+    assert totals.annual_ctc == d("612000.00")  # 50000*12 + 12000
+
+
+def test_monthly_lta_is_not_double_counted_in_annual_ctc():
+    # Under the MONTHLY basis the amount already sits inside gross_monthly, so
+    # adding it again at the annual level would pay it twice on paper.
+    totals = compute_totals(
+        gross_monthly=d("50000"), variable_pay_amount=d("0"), variable_pay_frequency="ANNUAL",
+        statutory_lines=[], insurance_employee_contribution_monthly=d("0"), insurance_employer_contribution_monthly=d("0"),
+        basic_salary_monthly=d("30000"), dearness_allowance_monthly=d("0"),
+        lta_amount=d("1000"), lta_payout_basis="MONTHLY",
+    )
+    assert totals.annual_ctc == d("600000.00")  # 50000*12 exactly, no LTA re-add
+
+
 # ----------------------------------------------------- Code on Wages boundary
 def test_wage_code_compliant_exactly_at_50_percent():
     # basic+DA annual = 30000*12 = 360000; CTC = 50000*12 = 600000 -> exactly 60%... use numbers that land on 50 exactly.

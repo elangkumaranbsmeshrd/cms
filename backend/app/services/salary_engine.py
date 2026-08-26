@@ -91,8 +91,17 @@ def compute_totals(
     insurance_employer_contribution_monthly: Decimal,
     basic_salary_monthly: Decimal,
     dearness_allowance_monthly: Decimal,
+    # An ANNUAL LTA is real money the company pays and belongs in CTC, but it
+    # is deliberately absent from gross_monthly (Employee §2.2 counts LTA there
+    # only "if paid monthly"), so annualising gross alone silently loses it.
+    # Defaulted to the MONTHLY basis so existing callers keep their exact
+    # behaviour: under MONTHLY the annual term below is zero, because the
+    # amount is already inside gross_monthly and would otherwise be paid twice.
+    lta_amount: Decimal = Decimal("0"),
+    lta_payout_basis: str = "MONTHLY",
 ) -> SalaryTotals:
     variable_pay_annualised = variable_pay_amount * (4 if variable_pay_frequency == "QUARTERLY" else 1)
+    lta_annualised = lta_amount if lta_payout_basis == "ANNUAL" else Decimal("0")
 
     applicable = [line for line in statutory_lines if line.is_applicable]
     total_employee_statutory = sum((line.computed_amount_monthly for line in applicable if line.borne_by == "EMPLOYEE"), Decimal("0"))
@@ -104,6 +113,7 @@ def compute_totals(
     annual_ctc = (
         gross_monthly * 12
         + variable_pay_annualised
+        + lta_annualised
         + total_employer_statutory_ctc * 12
         + insurance_employer_contribution_monthly * 12
     )

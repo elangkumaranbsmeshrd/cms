@@ -327,7 +327,12 @@ class InsuranceEnrollmentOut(BaseModel):
 
 # ================================================================ DOCUMENTS
 class DocumentUpload(BaseModel):
-    document_type: str
+    # employee_documents.ck_ed_type, mirrored into the contract for the same
+    # reason EMERGENCY_CONTACT_RELATIONSHIPS is: as a bare `str` the OpenAPI
+    # spec advertised "any string" while the DB accepted exactly five values,
+    # so a client had no way to know what was legal and a wrong one only
+    # surfaced as a generic constraint 409 from the router.
+    document_type: Literal["ID_PROOF", "EDUCATIONAL_CERTIFICATE", "RESUME", "OFFER_LETTER_COPY", "OTHER"]
     file_id: str
     note: str | None = None
 

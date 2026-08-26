@@ -392,6 +392,12 @@ async def raise_resignation(
         id=str(uuid.uuid4()), employee_id=employee_id, financial_year_id=fy.id,
         submitted_at=datetime.now(timezone.utc), submitted_by_user_id=current_user.id,
         manager_acknowledgement_required=employee.reporting_manager_id is not None,
+        # ARCH-1 §resignations: final_last_working_day is "the date fixed by
+        # the resignation acceptance letter... Defaults from last_working_day".
+        # Nothing in app/ ever wrote it, so it read back NULL on every row
+        # including COMPLETED ones — the default is seeded here and the letter
+        # re-stamps it in generate_offer_letter() when HR fixes a different date.
+        final_last_working_day=body.last_working_day,
         created_by=current_user.id, updated_by=current_user.id, **body.model_dump(),
     )
     db.add(row)
@@ -868,6 +874,13 @@ async def generate_offer_letter(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if letter.status != "DRAFT":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Already generated")
+    # create_offer_letter() blocks a NEW acceptance letter on a withdrawn
+    # resignation, but a letter drafted while the resignation was still live
+    # and only generated afterwards slipped straight through — verified live:
+    # withdraw -> generate returned 200 and produced the acceptance PDF. Same
+    # parent-status re-check every other offboarding action does.
+    if letter.letter_type == "RESIGNATION_ACCEPTANCE_LETTER" and letter.resignation_id is not None:
+        _assert_not_withdrawn(await db.get(Resignation, letter.resignation_id))
 
     employee = await db.get(Employee, letter.employee_id)
     letter.status = "GENERATED"
@@ -888,6 +901,14 @@ async def generate_offer_letter(
         if step is not None:
             step.linked_offer_letter_id = letter.id
             step.updated_by = current_user.id
+        # This IS the moment the last working day becomes final (ARCH-1:
+        # "the date fixed by the resignation acceptance letter"), so the
+        # letter's own snapshot is written back onto the resignation here —
+        # the only writer of final_last_working_day besides the default
+        # seeded at raise_resignation().
+        if resignation is not None and letter.last_working_day_snapshot is not None:
+            resignation.final_last_working_day = letter.last_working_day_snapshot
+            resignation.updated_by = current_user.id
         letter_type_label = "Resignation Acceptance Letter"
         sections = _resignation_acceptance_sections(letter, employee, resignation)
     else:
@@ -935,6 +956,11 @@ async def send_offer_letter(
         # in the same commit, by generate_offer_letter() — but guard rather
         # than send an email with no attachment.
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Generate the PDF before sending")
+    # Same re-check as generate_offer_letter(): an acceptance letter already
+    # GENERATED before the employee retracted must not still be emailed out
+    # as though the resignation stood.
+    if letter.letter_type == "RESIGNATION_ACCEPTANCE_LETTER" and letter.resignation_id is not None:
+        _assert_not_withdrawn(await db.get(Resignation, letter.resignation_id))
 
     employee = await db.get(Employee, letter.employee_id)
     to_email = body.to_email or employee.email
