@@ -59,19 +59,38 @@ import { FileUploadService } from '../file-upload.service';
                   @if (field.type === 'select') {
                     <!-- [ngValue], not [value]: a plain [value] round-trips
                          through the DOM as a string, so picking "—" wrote the
-                         literal text "null" into the model. -->
-                    <select class="input" [(ngModel)]="formModel[field.key]">
+                         literal text "null" into the model.
+                         aria-label, not just the sibling <label> above: proven
+                         necessary in form-screen.component.ts by a real E2E
+                         test — the label's computed accessible name included
+                         the required-marker asterisk despite it being
+                         aria-hidden. An explicit aria-label on the control
+                         takes precedence, so the announced name is exactly
+                         field.label regardless. -->
+                    <select class="input" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]">
                       <option [ngValue]="null">—</option>
                       @for (opt of selectOptions(field); track opt.id) {
                         <option [ngValue]="opt.id">{{ opt.label }}</option>
                       }
                     </select>
                   } @else if (field.type === 'checkbox') {
-                    <span class="toggle" [class.on]="!!formModel[field.key]" (click)="formModel[field.key] = !formModel[field.key]">
+                    <!-- role/tabindex/aria-checked/keyboard handlers: a bare
+                         <span> is untabbable and reports no on/off state. -->
+                    <span
+                      class="toggle"
+                      role="switch"
+                      tabindex="0"
+                      [attr.aria-checked]="!!formModel[field.key]"
+                      [attr.aria-label]="field.label"
+                      [class.on]="!!formModel[field.key]"
+                      (click)="formModel[field.key] = !formModel[field.key]"
+                      (keydown.enter)="formModel[field.key] = !formModel[field.key]"
+                      (keydown.space)="$event.preventDefault(); formModel[field.key] = !formModel[field.key]"
+                    >
                       <span class="track"></span>
                     </span>
                   } @else if (field.type === 'textarea') {
-                    <textarea class="input" rows="3" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
+                    <textarea class="input" rows="3" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
                   } @else if (field.type === 'file') {
                     <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                       @if (formModel[field.key]; as fid) {
@@ -97,6 +116,8 @@ import { FileUploadService } from '../file-upload.service';
                     <input
                       class="input"
                       [type]="inputType(field)"
+                      [attr.aria-label]="field.label"
+                      [attr.aria-required]="field.required ? 'true' : null"
                       [placeholder]="field.placeholder ?? ''"
                       [(ngModel)]="formModel[field.key]"
                     />
@@ -123,7 +144,7 @@ import { FileUploadService } from '../file-upload.service';
                         {{ ta.promptLabel }}
                         <span class="req" aria-hidden="true">*</span>
                       </label>
-                      <input class="input" type="email" [placeholder]="ta.promptPlaceholder ?? ''" [(ngModel)]="testValue" />
+                      <input class="input" type="email" [attr.aria-label]="ta.promptLabel" aria-required="true" [placeholder]="ta.promptPlaceholder ?? ''" [(ngModel)]="testValue" />
                       <div class="hint">Defaults to your own signed-in address.</div>
                     </div>
                     @if (ta.usingLabel) {

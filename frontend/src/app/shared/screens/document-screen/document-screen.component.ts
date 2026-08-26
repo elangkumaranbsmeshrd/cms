@@ -181,18 +181,47 @@ import { ArrayColumnConfig, DocumentActionDef, DocumentScreenConfig, DocumentTot
                       />
                     </div>
                   } @else if (field.type === 'select') {
-                    <select class="input" [(ngModel)]="formModel[field.key]">
+                    <!-- aria-label, not just the sibling <label> above: proven
+                         necessary in form-screen.component.ts by a real E2E
+                         test — getByLabel(field.label, {exact:true}) found
+                         zero matches because the label's computed accessible
+                         name included the required-marker asterisk despite it
+                         being aria-hidden. An explicit aria-label on the
+                         control takes precedence over label content, so the
+                         announced name is exactly field.label regardless. -->
+                    <select class="input" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]">
                       <option [ngValue]="null">—</option>
                       @for (opt of selectOptions(field); track opt.id) {
                         <option [ngValue]="opt.id">{{ opt.label }}</option>
                       }
                     </select>
                   } @else if (field.type === 'checkbox') {
-                    <span class="toggle" [class.on]="!!formModel[field.key]" (click)="formModel[field.key] = !formModel[field.key]">
+                    <!-- role/tabindex/aria-checked/keyboard handlers: a bare
+                         <span> is untabbable and reports no on/off state to a
+                         screen reader, not merely unnamed. aria-label rather
+                         than aria-labelledby, since this component (unlike
+                         form-screen.component.ts) has no labelId() helper —
+                         field.label directly gives the same accessible name
+                         without needing one. -->
+                    <span
+                      class="toggle"
+                      role="switch"
+                      tabindex="0"
+                      [attr.aria-checked]="!!formModel[field.key]"
+                      [attr.aria-label]="field.label"
+                      [class.on]="!!formModel[field.key]"
+                      (click)="formModel[field.key] = !formModel[field.key]"
+                      (keydown.enter)="formModel[field.key] = !formModel[field.key]"
+                      (keydown.space)="$event.preventDefault(); formModel[field.key] = !formModel[field.key]"
+                    >
                       <span class="track"></span>
                     </span>
                   } @else if (field.type === 'checkgroup') {
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px;">
+                    <!-- Each box is already named by its own wrapping <label>;
+                         role="group" + aria-label names the SET, which the
+                         outer field <label> above did not (no id to point an
+                         aria-labelledby at here). -->
+                    <div role="group" [attr.aria-label]="field.label" style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px;">
                       @for (opt of selectOptions(field); track opt.id) {
                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer;">
                           <input type="checkbox" [checked]="inCheckGroup(field, opt.id)" (change)="toggleCheckGroup(field, opt.id)" />
@@ -201,9 +230,9 @@ import { ArrayColumnConfig, DocumentActionDef, DocumentScreenConfig, DocumentTot
                       }
                     </div>
                   } @else if (field.type === 'textarea') {
-                    <textarea class="input" rows="3" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
+                    <textarea class="input" rows="3" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
                   } @else {
-                    <input class="input" [type]="inputType(field)" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]" />
+                    <input class="input" [type]="inputType(field)" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]" />
                   }
                   @if (fileErrorFor(field)) {
                     <div class="hint" style="color: var(--danger);">{{ fileErrorFor(field) }}</div>
@@ -241,20 +270,37 @@ import { ArrayColumnConfig, DocumentActionDef, DocumentScreenConfig, DocumentTot
                           @if (isLocked()) {
                             {{ lineItemCellDisplay(col, item) }}
                           } @else if (col.type === 'select') {
-                            <select class="input" [(ngModel)]="item[col.key]">
+                            <!-- aria-label = the COLUMN name, per-row: a <th>
+                                 only names a cell for a sighted reader, and no
+                                 per-row <label> can exist here without id
+                                 collisions across repeated rows — same pattern
+                                 form-screen.component.ts's own array-field
+                                 table already uses. -->
+                            <select class="input" [attr.aria-label]="col.label" [(ngModel)]="item[col.key]">
                               <option [value]="null">—</option>
                               @for (opt of arrayColumnOptions(col); track opt.value) {
                                 <option [value]="opt.value">{{ opt.label }}</option>
                               }
                             </select>
                           } @else if (col.type === 'checkbox') {
-                            <span class="toggle" [class.on]="!!item[col.key]" (click)="item[col.key] = !item[col.key]">
+                            <span
+                              class="toggle"
+                              role="switch"
+                              tabindex="0"
+                              [attr.aria-checked]="!!item[col.key]"
+                              [attr.aria-label]="col.label"
+                              [class.on]="!!item[col.key]"
+                              (click)="item[col.key] = !item[col.key]"
+                              (keydown.enter)="item[col.key] = !item[col.key]"
+                              (keydown.space)="$event.preventDefault(); item[col.key] = !item[col.key]"
+                            >
                               <span class="track"></span>
                             </span>
                           } @else {
                             <input
                               class="input"
                               [type]="col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'"
+                              [attr.aria-label]="col.label"
                               [(ngModel)]="item[col.key]"
                             />
                           }

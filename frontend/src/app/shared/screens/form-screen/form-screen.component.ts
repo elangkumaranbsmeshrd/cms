@@ -70,6 +70,22 @@ let formScreenInstanceSeq = 0;
                      none, because a screen reader follows it and finds nothing
                      to name. Those three get aria-labelledby off labelId()
                      instead, which is why the <label> always carries an id. -->
+                <!-- select/textarea/input below carry their OWN [attr.aria-label]
+                     set to the plain field.label, rather than relying on this
+                     <label>'s content plus aria-hidden on the asterisk. Proven
+                     wrong by a real E2E test: getByLabel('Department', {exact:
+                     true}) found zero matches even though the asterisk span is
+                     correctly aria-hidden — the accessible name computed from
+                     this label's content included the "*" anyway, since
+                     "exclude aria-hidden descendants from name-from-content"
+                     is inconsistently honoured for a for-associated <label> in
+                     practice. An explicit aria-label on the control itself
+                     takes precedence over label-for content in the accessible
+                     name computation, so the announced name is exactly
+                     field.label regardless of that inconsistency — the visual
+                     asterisk stays for sighted users, required-ness is
+                     conveyed separately via aria-required, and the for/id
+                     association is kept for click-to-focus. -->
                 <label [id]="labelId(field)" [attr.for]="labelTargetId(field)">
                   {{ field.label }}
                   @if (field.required) {
@@ -118,7 +134,7 @@ let formScreenInstanceSeq = 0;
                        wrote the literal text "null" into the model and sent it
                        to the API as a 4-character string instead of clearing
                        the field. -->
-                  <select class="input" [id]="controlId(field)" [(ngModel)]="formModel[field.key]">
+                  <select class="input" [id]="controlId(field)" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]">
                     <option [ngValue]="null">—</option>
                     @for (opt of selectOptions(field); track opt.id) {
                       <option [ngValue]="opt.id">{{ opt.label }}</option>
@@ -163,12 +179,14 @@ let formScreenInstanceSeq = 0;
                     }
                   </div>
                 } @else if (field.type === 'textarea') {
-                  <textarea class="input" rows="3" [id]="controlId(field)" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
+                  <textarea class="input" rows="3" [id]="controlId(field)" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
                 } @else {
                   <input
                     class="input"
                     [id]="controlId(field)"
                     [type]="inputType(field)"
+                    [attr.aria-label]="field.label"
+                    [attr.aria-required]="field.required ? 'true' : null"
                     [placeholder]="field.placeholder ?? ''"
                     [(ngModel)]="formModel[field.key]"
                   />
