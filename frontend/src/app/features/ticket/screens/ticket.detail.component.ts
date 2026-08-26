@@ -106,7 +106,13 @@ const SCREEN = 'ticket.list';
             </div>
           </div>
           <div class="rec-actions">
-            <select class="fselect" style="height: 30px;" title="Change Status" [disabled]="statusSaving()" (change)="onStatusSelect($any($event.target).value)">
+            <!-- axe: [serious] label-title-only. The title stays as the
+                 tooltip, but it cannot BE the name — a tooltip is not announced
+                 reliably, is invisible to touch users and disappears on
+                 keyboard focus. "Change Status" is also an action description
+                 rather than a name; what this combo box is, is the ticket's
+                 Status, so that is what gets announced. -->
+            <select class="fselect" style="height: 30px;" aria-label="Status" title="Change Status" [disabled]="statusSaving()" (change)="onStatusSelect($any($event.target).value)">
               @for (opt of visibleStatusOptions(); track opt.value) {
                 <option [value]="opt.value" [selected]="opt.value === t.status">{{ opt.label }}</option>
               }

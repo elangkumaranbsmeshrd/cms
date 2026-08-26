@@ -157,10 +157,24 @@ interface DepartmentOption {
                    User-id field in this codebase (see this file's own
                    header comment). -->
               <div><div class="cell-sub">Approved By</div><div class="cell-strong">{{ approverLabel(row) }}</div></div>
-              <div><div class="cell-sub">Reimbursed Date</div><input class="input" type="date" [max]="today" [(ngModel)]="reimburseForm['reimbursed_date']" /></div>
+              <!-- Every control in this card carries an explicit aria-label. The
+                   visible caption above each one is a <div class="cell-sub">,
+                   not a <label for> — a div names nothing in the accessibility
+                   tree no matter how label-like it looks, so each of these
+                   announced as a bare unnamed combo box / edit field. Same
+                   defect the filter row below had, and the same fix (see its
+                   comment); these escaped the axe sweep's count only because the
+                   whole card is behind reimbursingRow(), which an automated
+                   crawl never opens. The aria-label text repeats the cell-sub
+                   verbatim so the announced name and the visible caption cannot
+                   drift. aria-required marks the three fields submitReimburse()
+                   actually rejects, so a screen-reader user hears the
+                   requirement before submitting rather than only in the error
+                   banner afterwards. -->
+              <div><div class="cell-sub">Reimbursed Date</div><input class="input" type="date" aria-label="Reimbursed Date" aria-required="true" [max]="today" [(ngModel)]="reimburseForm['reimbursed_date']" /></div>
               <div>
                 <div class="cell-sub">Payment Mode</div>
-                <select class="input" [(ngModel)]="reimburseForm['payment_mode_id']">
+                <select class="input" aria-label="Payment Mode" aria-required="true" [(ngModel)]="reimburseForm['payment_mode_id']">
                   <option [value]="null">—</option>
                   @for (m of paymentModes(); track m.id) {
                     <option [value]="m.id">{{ m.label }}</option>
@@ -169,14 +183,14 @@ interface DepartmentOption {
               </div>
               <div>
                 <div class="cell-sub">Reimbursed From Bank Account</div>
-                <select class="input" [(ngModel)]="reimburseForm['reimbursed_from_bank_account_id']">
+                <select class="input" aria-label="Reimbursed From Bank Account" aria-required="true" [(ngModel)]="reimburseForm['reimbursed_from_bank_account_id']">
                   <option [value]="null">—</option>
                   @for (b of activeBankAccounts(); track b.id) {
                     <option [value]="b.id">{{ b.label }}</option>
                   }
                 </select>
               </div>
-              <div><div class="cell-sub">Reference</div><input class="input" [(ngModel)]="reimburseForm['reference']" placeholder="Optional" /></div>
+              <div><div class="cell-sub">Reference</div><input class="input" aria-label="Reference" [(ngModel)]="reimburseForm['reference']" placeholder="Optional" /></div>
             </div>
           </div>
           <div class="card-foot">
@@ -193,51 +207,68 @@ interface DepartmentOption {
           <h3>All Expenses</h3>
         </div>
         <div class="card-body" style="padding-bottom: 0;">
+          <!-- Every control in this filter row carries an explicit aria-label.
+               This bar is label-less by design — the dimension name lives in
+               the "All Expense Types" option or in a tooltip — so before this
+               the axe sweep flagged the three title-less selects as [critical]
+               select-name, the titled ones as [serious] label-title-only and
+               the amount/pending/search boxes as placeholder-only on
+               /expenses/all. A title is a tooltip, not a label: it never
+               surfaces on touch, it vanishes on keyboard focus, and screen
+               readers announce it only as a last resort; a placeholder is worse
+               still, since it disappears the moment the user types. See
+               list-screen.component.ts's filter-bar comment (and
+               form-screen.component.ts's own [attr.aria-label]) for the full
+               reasoning. The titles and placeholders stay. -->
           <div class="filter-row" style="flex-wrap: wrap;">
-            <select class="input sm" multiple [(ngModel)]="statusFilter" (ngModelChange)="load()" title="Ctrl/Cmd-click to select multiple statuses">
+            <!-- This title is a usage HINT, not the field's name — it was never
+                 a candidate label even in principle, which is why "Status" has
+                 to come from aria-label rather than from reusing the tooltip
+                 the way the Department and Bank Account selects below do. -->
+            <select class="input sm" multiple aria-label="Status" [(ngModel)]="statusFilter" (ngModelChange)="load()" title="Ctrl/Cmd-click to select multiple statuses">
               @for (s of STATUS_OPTIONS; track s.value) {
                 <option [value]="s.value">{{ s.label }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="expenseTypeFilter" (ngModelChange)="load()">
+            <select class="input sm" aria-label="Expense Type" [(ngModel)]="expenseTypeFilter" (ngModelChange)="load()">
               <option value="">All Expense Types</option>
               @for (t of expenseTypes(); track t.id) {
                 <option [value]="t.id">{{ t.name }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="employeeFilter" (ngModelChange)="load()">
+            <select class="input sm" aria-label="Employee" [(ngModel)]="employeeFilter" (ngModelChange)="load()">
               <option value="">All Employees</option>
               @for (e of employees(); track e.id) {
                 <option [value]="e.id">{{ employeeDisplayName(e) }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="departmentFilter" (ngModelChange)="load()" title="Department">
+            <select class="input sm" aria-label="Department" [(ngModel)]="departmentFilter" (ngModelChange)="load()" title="Department">
               <option value="">All Departments</option>
               @for (d of departments(); track d.id) {
                 <option [value]="d.id">{{ d.name }}</option>
               }
             </select>
             @if (canSeeVendor()) {
-              <select class="input sm" [(ngModel)]="vendorFilter" (ngModelChange)="load()">
+              <select class="input sm" aria-label="Vendor" [(ngModel)]="vendorFilter" (ngModelChange)="load()">
                 <option value="">All Vendors</option>
                 @for (v of vendors(); track v.id) {
                   <option [value]="v.id">{{ v.vendor_name }}</option>
                 }
               </select>
             }
-            <select class="input sm" [(ngModel)]="bankAccountFilter" (ngModelChange)="load()" title="Bank Account">
+            <select class="input sm" aria-label="Bank Account" [(ngModel)]="bankAccountFilter" (ngModelChange)="load()" title="Bank Account">
               <option value="">All Accounts</option>
               @for (b of bankAccounts(); track b.id) {
                 <option [value]="b.id">{{ b.label }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="financialYearFilter" (ngModelChange)="load()" title="Financial Year">
+            <select class="input sm" aria-label="Financial Year" [(ngModel)]="financialYearFilter" (ngModelChange)="load()" title="Financial Year">
               <option value="">All Financial Years</option>
               @for (fy of financialYears(); track fy.id) {
                 <option [value]="fy.id">{{ fy.label ?? fy.id }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="approvedByFilter" (ngModelChange)="load()" title="Approved By">
+            <select class="input sm" aria-label="Approved By" [(ngModel)]="approvedByFilter" (ngModelChange)="load()" title="Approved By">
               <option value="">Approved By — Any</option>
               @for (u of approverOptions(); track u.id) {
                 <option [value]="u.id">{{ u.label }}</option>
@@ -249,27 +280,41 @@ interface DepartmentOption {
                  buildDatePresets()/resolveRange() financial-year-aware
                  machinery ListScreenComponent's own 'daterange' filter kind
                  uses, wired by hand since this is a bespoke component. -->
-            <select class="input sm" [(ngModel)]="periodPreset" (ngModelChange)="onPeriodPresetChange()" title="Period">
+            <select class="input sm" aria-label="Period" [(ngModel)]="periodPreset" (ngModelChange)="onPeriodPresetChange()" title="Period">
               <option value="">All Dates</option>
               @for (p of presets(); track p.value) {
                 <option [value]="p.value">{{ p.label }}</option>
               }
             </select>
             @if (periodPreset === CUSTOM_PRESET) {
-              <input class="input sm" type="date" [(ngModel)]="dateFrom" (ngModelChange)="load()" title="From" />
-              <input class="input sm" type="date" [(ngModel)]="dateTo" (ngModelChange)="load()" title="To" />
+              <!-- "Period from"/"Period to", not the bare "From"/"To" the
+                   tooltips say: this same row carries a second date pair
+                   (Approved from / Approved to) and both are on screen at once
+                   whenever Period is Custom, so a name of just "From" would be
+                   announced against two different ranges with nothing to tell
+                   them apart. -->
+              <input class="input sm" type="date" aria-label="Period from" [(ngModel)]="dateFrom" (ngModelChange)="load()" title="From" />
+              <input class="input sm" type="date" aria-label="Period to" [(ngModel)]="dateTo" (ngModelChange)="load()" title="To" />
             }
-            <select class="input sm" [(ngModel)]="hasReceiptFilter" (ngModelChange)="load()" title="Has Receipt">
+            <select class="input sm" aria-label="Has Receipt" [(ngModel)]="hasReceiptFilter" (ngModelChange)="load()" title="Has Receipt">
               <option value="">Receipt — Any</option>
               <option value="yes">Yes</option>
               <option value="no">No</option>
             </select>
-            <input class="input sm" type="number" min="0" step="0.01" [(ngModel)]="amountMinFilter" (ngModelChange)="load()" placeholder="Min Amount" style="width: 110px;" />
-            <input class="input sm" type="number" min="0" step="0.01" [(ngModel)]="amountMaxFilter" (ngModelChange)="load()" placeholder="Max Amount" style="width: 110px;" />
-            <input class="input sm" type="date" [(ngModel)]="approvedFrom" (ngModelChange)="load()" title="Approved from" />
-            <input class="input sm" type="date" [(ngModel)]="approvedTo" (ngModelChange)="load()" title="Approved to" />
-            <input class="input sm" type="number" min="0" step="1" [(ngModel)]="pendingDaysFilter" (ngModelChange)="load()" placeholder="Pending ≥ N days" style="width: 130px;" />
-            <input class="input sm" [(ngModel)]="search" (keyup.enter)="load()" (blur)="load()" placeholder="Search description, type… (Enter to search)" />
+            <input class="input sm" type="number" min="0" step="0.01" aria-label="Min Amount" [(ngModel)]="amountMinFilter" (ngModelChange)="load()" placeholder="Min Amount" style="width: 110px;" />
+            <input class="input sm" type="number" min="0" step="0.01" aria-label="Max Amount" [(ngModel)]="amountMaxFilter" (ngModelChange)="load()" placeholder="Max Amount" style="width: 110px;" />
+            <input class="input sm" type="date" aria-label="Approved from" [(ngModel)]="approvedFrom" (ngModelChange)="load()" title="Approved from" />
+            <input class="input sm" type="date" aria-label="Approved to" [(ngModel)]="approvedTo" (ngModelChange)="load()" title="Approved to" />
+            <!-- Named "Minimum days pending" rather than echoing the
+                 placeholder: "Pending ≥ N days" is a formula with a stand-in
+                 letter in it, and a screen reader reads it out as one — "greater
+                 than or equal to N" names nothing. The placeholder stays for
+                 sighted users, who read it as the shorthand it is. -->
+            <input class="input sm" type="number" min="0" step="1" aria-label="Minimum days pending" [(ngModel)]="pendingDaysFilter" (ngModelChange)="load()" placeholder="Pending ≥ N days" style="width: 130px;" />
+            <!-- Named "Search description or type" rather than echoing the whole
+                 placeholder: "(Enter to search)" is an instruction about how to
+                 use the box, and an accessible name should be what the box IS. -->
+            <input class="input sm" aria-label="Search description or type" [(ngModel)]="search" (keyup.enter)="load()" (blur)="load()" placeholder="Search description, type… (Enter to search)" />
           </div>
         </div>
         @if (actionError()) {

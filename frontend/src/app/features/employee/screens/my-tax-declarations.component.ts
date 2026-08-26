@@ -83,8 +83,15 @@ const VERIFICATION_OPTIONS = [
             <p class="hint" style="margin: 0 0 10px;">No tax scheme elected yet for this financial year.</p>
           }
           @if (!currentSchemeName() || canElectAgain()) {
+            <!-- This picker had no name of any kind — not even a title to fall
+                 back on — so axe flagged it [critical] select-name and a screen
+                 reader announced a bare combo box. The card's own "Tax Scheme"
+                 heading names it for a sighted user but associates nothing, so
+                 that heading's text becomes the control's aria-label, the way
+                 form-screen.component.ts puts the plain field.label on the
+                 control itself. -->
             <div class="filter-row" style="margin-top: 10px;">
-              <select class="input" style="width: auto;" [(ngModel)]="selectedSchemeId">
+              <select class="input" style="width: auto;" aria-label="Tax Scheme" [(ngModel)]="selectedSchemeId">
                 @for (s of schemes(); track s.id) {
                   <option [value]="s.id">{{ s.scheme_name }}</option>
                 }
@@ -133,13 +140,24 @@ const VERIFICATION_OPTIONS = [
                   </tr>
                 </thead>
                 <tbody>
+                  <!-- The two editable cells below are named per ROW, not just
+                       per column. A <th> names a cell only for a sighted reader
+                       scanning down the column, and no <label for> can be added
+                       inside a grid of repeated rows without colliding ids — so
+                       both controls were unnamed. Folding the row's own
+                       declaration name into the label is what makes the name
+                       useful rather than merely present: a screen reader user
+                       arrowing through a dozen identical "Amount Declared"
+                       boxes cannot tell which tax head they are typing into.
+                       Same [attr.aria-label] mechanism form-screen.component.ts
+                       uses for its own repeated array-table rows. -->
                   @for (l of d.lines; track l.id) {
                     <tr>
                       <td class="cell-strong">{{ l.declaration_name_snapshot }}</td>
                       <td class="mono r">{{ l.declaration_cap_snapshot ? formatMoney(l.declaration_cap_snapshot) : '—' }}</td>
                       <td class="r">
                         @if (d.status === 'DRAFT') {
-                          <input class="input" type="number" style="width: 120px; text-align: right;" [(ngModel)]="lineAmounts[l.id]" />
+                          <input class="input" type="number" style="width: 120px; text-align: right;" [attr.aria-label]="'Amount Declared — ' + l.declaration_name_snapshot" [(ngModel)]="lineAmounts[l.id]" />
                         } @else {
                           {{ formatMoney(l.amount_declared) }}
                         }
@@ -147,7 +165,7 @@ const VERIFICATION_OPTIONS = [
                       <td class="mono r">{{ formatMoney(l.amount_accepted_for_calculation) }}</td>
                       <td>
                         @if (canVerify()) {
-                          <select class="input" style="width: auto;" [(ngModel)]="lineVerification[l.id]" (ngModelChange)="verifyLine(l)">
+                          <select class="input" style="width: auto;" [attr.aria-label]="'Verification — ' + l.declaration_name_snapshot" [(ngModel)]="lineVerification[l.id]" (ngModelChange)="verifyLine(l)">
                             @for (v of VERIFICATION_OPTIONS; track v.value) {
                               <option [value]="v.value">{{ v.label }}</option>
                             }
@@ -161,9 +179,15 @@ const VERIFICATION_OPTIONS = [
                           <button class="btn sm ghost" type="button" (click)="saveLine(l)">Save</button>
                         }
                         @if (l.requires_proof_snapshot) {
+                          <!-- The wrapping <label> already names this input
+                               "Upload Proof", so it was never an axe finding —
+                               but every row names its input identically, which
+                               is the same "named yet unusable" problem as the
+                               two cells above. The row's declaration name makes
+                               it say WHICH proof. -->
                           <label class="btn sm ghost" style="cursor: pointer;">
                             Upload Proof
-                            <input type="file" style="display: none;" (change)="uploadProof(l, $event)" />
+                            <input type="file" style="display: none;" [attr.aria-label]="'Upload Proof — ' + l.declaration_name_snapshot" (change)="uploadProof(l, $event)" />
                           </label>
                         }
                       </td>

@@ -73,42 +73,56 @@ import { RoleButtonDirective } from '../../../shared/ui/role-button.directive';
     </div>
 
     <div class="filterbar" style="margin-bottom: 16px;">
+      <!-- axe read this row as six [serious] label-title-only violations: every
+           control here was named ONLY by its title. A title is a tooltip, not a
+           label — it never surfaces on touch, it disappears on keyboard focus,
+           and screen readers announce it only as a last resort. The titles all
+           stay (they are useful tooltips for a bar of otherwise wordless
+           combo boxes); each control now also carries its own aria-label, the
+           way company-expenses.component.ts's filter row does. -->
       <div class="filter-row">
-        <select class="fselect" title="Date Range" [(ngModel)]="periodPreset" (ngModelChange)="onPeriodPresetChange()">
+        <select class="fselect" aria-label="Date Range" title="Date Range" [(ngModel)]="periodPreset" (ngModelChange)="onPeriodPresetChange()">
           <option value="">All Dates</option>
           @for (p of presets(); track p.value) {
             <option [value]="p.value">{{ p.label }}</option>
           }
         </select>
         @if (periodPreset === CUSTOM_PRESET) {
-          <input class="fsearch" type="date" title="From" [(ngModel)]="dateFrom" (ngModelChange)="refetch()" style="max-width: 150px;" />
-          <input class="fsearch" type="date" title="To" [(ngModel)]="dateTo" (ngModelChange)="refetch()" style="max-width: 150px;" />
+          <!-- "From" / "To" work as tooltips because they sit right beside the
+               Date Range select that explains them, but a screen reader reaches
+               a control with no such context, so the announced name says what
+               is being bounded. "To Date" also keeps the name from being a
+               substring of a sibling: a bare "To" is contained in "Customer"
+               below, which is exactly the kind of overlap that turns a
+               by-label lookup into an ambiguous match. -->
+          <input class="fsearch" type="date" aria-label="From Date" title="From" [(ngModel)]="dateFrom" (ngModelChange)="refetch()" style="max-width: 150px;" />
+          <input class="fsearch" type="date" aria-label="To Date" title="To" [(ngModel)]="dateTo" (ngModelChange)="refetch()" style="max-width: 150px;" />
         }
-        <select class="fselect" title="Category" [(ngModel)]="categoryId" (ngModelChange)="refetch()">
+        <select class="fselect" aria-label="Category" title="Category" [(ngModel)]="categoryId" (ngModelChange)="refetch()">
           <option [ngValue]="null">All Categories</option>
           @for (opt of categoryOptions(); track opt.id) {
             <option [ngValue]="opt.id">{{ opt.label }}</option>
           }
         </select>
-        <select class="fselect" title="Assigned To" [(ngModel)]="assignedTo" (ngModelChange)="refetch()">
+        <select class="fselect" aria-label="Assigned To" title="Assigned To" [(ngModel)]="assignedTo" (ngModelChange)="refetch()">
           <option [ngValue]="null">All Staff</option>
           @for (opt of employeeOptions(); track opt.id) {
             <option [ngValue]="opt.id">{{ opt.label }}</option>
           }
         </select>
-        <select class="fselect" title="Customer" [(ngModel)]="customerId" (ngModelChange)="refetch()">
+        <select class="fselect" aria-label="Customer" title="Customer" [(ngModel)]="customerId" (ngModelChange)="refetch()">
           <option [ngValue]="null">All Customers</option>
           @for (opt of customerOptions(); track opt.id) {
             <option [ngValue]="opt.id">{{ opt.label }}</option>
           }
         </select>
-        <select class="fselect" title="Priority" [(ngModel)]="priority" (ngModelChange)="refetch()">
+        <select class="fselect" aria-label="Priority" title="Priority" [(ngModel)]="priority" (ngModelChange)="refetch()">
           <option [ngValue]="null">All Priorities</option>
           @for (opt of PRIORITY_OPTIONS; track opt.value) {
             <option [ngValue]="opt.value">{{ opt.label }}</option>
           }
         </select>
-        <select class="fselect" title="Status" [(ngModel)]="status" (ngModelChange)="refetch()">
+        <select class="fselect" aria-label="Status" title="Status" [(ngModel)]="status" (ngModelChange)="refetch()">
           <option [ngValue]="null">All Statuses</option>
           @for (opt of STATUS_OPTIONS; track opt.value) {
             <option [ngValue]="opt.value">{{ opt.label }}</option>

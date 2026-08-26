@@ -64,15 +64,22 @@ const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 
     @if (isLoading()) {
       <div class="empty"><p>Loading…</p></div>
     } @else {
+      <!-- Both filters carry an explicit aria-label. They had no name of any
+           kind — not even a title to fall back on — so axe flagged them as
+           [critical] select-name and a screen reader announced two bare combo
+           boxes. The dimension each one narrows lives only in its "All
+           Categories" / "All Statuses" option, which is the current VALUE, not
+           the control's name. See company-expenses.component.ts's own
+           filter-row comment for the full reasoning. -->
       <div class="filterbar" style="margin-bottom: 12px;">
         <div class="filter-row">
-          <select class="input" style="width: auto;" [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
+          <select class="input" style="width: auto;" aria-label="Category" [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)">
             <option [ngValue]="null">All Categories</option>
             @for (c of categories(); track c.id) {
               <option [value]="c.id">{{ c.label }}</option>
             }
           </select>
-          <select class="input" style="width: auto;" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+          <select class="input" style="width: auto;" aria-label="Status" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
             <option [ngValue]="null">All Statuses</option>
             @for (s of STATUS_OPTIONS; track s.value) {
               <option [value]="s.value">{{ s.label }}</option>
@@ -118,10 +125,20 @@ const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 
             @if (requestError()) {
               <div class="form-error" style="margin: 0 0 14px;">{{ requestError() }}</div>
             }
+            <!-- Both controls below are captioned by a sibling
+                 <div class="cell-sub">, which associates nothing — it is a
+                 styled div, not a <label for>, so the caption reaches a
+                 sighted user and nothing else. The axe sweep has never flagged
+                 them only because it scans this screen with the Raise Request
+                 card closed; they are unnamed controls the instant anyone
+                 opens it. The caption's own text becomes each control's
+                 aria-label, the way form-screen.component.ts puts the plain
+                 field.label on the control itself, and aria-required mirrors
+                 submitRequest()'s own Description check. -->
             <div class="grid g-2">
               <div>
                 <div class="cell-sub">Request Type</div>
-                <select class="input" [(ngModel)]="requestForm['request_type']">
+                <select class="input" aria-label="Request Type" aria-required="true" [(ngModel)]="requestForm['request_type']">
                   @for (t of REQUEST_TYPE_OPTIONS; track t.value) {
                     <option [value]="t.value">{{ t.label }}</option>
                   }
@@ -130,7 +147,7 @@ const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 
               <div></div>
               <div style="grid-column: span 2;">
                 <div class="cell-sub">Description</div>
-                <textarea class="input" rows="3" [(ngModel)]="requestForm['description']"></textarea>
+                <textarea class="input" rows="3" aria-label="Description" aria-required="true" [(ngModel)]="requestForm['description']"></textarea>
               </div>
             </div>
           </div>

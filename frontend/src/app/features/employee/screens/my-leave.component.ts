@@ -112,36 +112,50 @@ const STATUS_OPTIONS = [
         </div>
       </div>
 
+      <!-- Every control in this filter bar carries an explicit aria-label. The
+           bar is label-less by design — each dimension's name lives in its
+           "All Leave Types" option or in a tooltip — so the axe sweep flagged
+           this whole run as [serious] label-title-only, and the search box as
+           an input named by nothing but its placeholder. A title is a tooltip,
+           not a name: it never surfaces on touch, it vanishes on keyboard
+           focus, and a screen reader falls back to it only as a last resort. A
+           placeholder is worse still — it disappears the moment the user
+           types, so the name evaporates exactly when the field has content
+           worth naming. The titles stay: they are useful tooltips, and the
+           cross-cutting filter E2E helpers select on them. See
+           company-expenses.component.ts's own filter-row comment (and
+           form-screen.component.ts's [attr.aria-label]) for the full
+           reasoning. -->
       <div class="filterbar">
         <div class="filter-row">
           <div class="searchbox">
             <span class="s-icon"><app-icon name="search" [size]="14" [width]="2" /></span>
-            <input type="search" placeholder="Search reason…" [(ngModel)]="searchFilter" (keyup.enter)="load()" (blur)="load()" />
+            <input type="search" aria-label="Search reason" placeholder="Search reason…" [(ngModel)]="searchFilter" (keyup.enter)="load()" (blur)="load()" />
           </div>
-          <select class="fselect" title="Leave Type" [(ngModel)]="leaveTypeFilter" (ngModelChange)="load()">
+          <select class="fselect" aria-label="Leave Type" title="Leave Type" [(ngModel)]="leaveTypeFilter" (ngModelChange)="load()">
             <option value="">All Leave Types</option>
             @for (t of leaveTypes(); track t.id) {
               <option [value]="t.id">{{ t.name }}</option>
             }
           </select>
-          <select class="fselect" title="Status" [(ngModel)]="statusFilter" (ngModelChange)="load()">
+          <select class="fselect" aria-label="Status" title="Status" [(ngModel)]="statusFilter" (ngModelChange)="load()">
             <option value="">All Statuses</option>
             @for (s of STATUS_OPTIONS; track s.value) {
               <option [value]="s.value">{{ s.label }}</option>
             }
           </select>
-          <select class="fselect" title="Financial Year" [(ngModel)]="finYearFilter" (ngModelChange)="load()">
+          <select class="fselect" aria-label="Financial Year" title="Financial Year" [(ngModel)]="finYearFilter" (ngModelChange)="load()">
             <option value="">All Financial Years</option>
             @for (fy of financialYears(); track fy.id) {
               <option [value]="fy.id">{{ fy.label }}</option>
             }
           </select>
-          <select class="fselect" title="Half-Day" [(ngModel)]="halfDayFilter" (ngModelChange)="load()">
+          <select class="fselect" aria-label="Half-Day" title="Half-Day" [(ngModel)]="halfDayFilter" (ngModelChange)="load()">
             <option value="">Half-Day — Any</option>
             <option value="yes">Yes</option>
             <option value="no">No</option>
           </select>
-          <select class="fselect" title="Actioned By" [(ngModel)]="actionedByFilter" (ngModelChange)="load()">
+          <select class="fselect" aria-label="Actioned By" title="Actioned By" [(ngModel)]="actionedByFilter" (ngModelChange)="load()">
             <option value="">Actioned By — Anyone</option>
             @for (u of actionedByOptions(); track u.id) {
               <option [value]="u.id">{{ u.label }}</option>
@@ -149,10 +163,10 @@ const STATUS_OPTIONS = [
           </select>
         </div>
         <div class="filter-row">
-          <input class="fsearch" type="date" title="Leave Date From" [(ngModel)]="dateFromFilter" (ngModelChange)="load()" style="max-width: 150px;" />
-          <input class="fsearch" type="date" title="Leave Date To" [(ngModel)]="dateToFilter" (ngModelChange)="load()" style="max-width: 150px;" />
-          <input class="fsearch" type="date" title="Applied From" [(ngModel)]="appliedFromFilter" (ngModelChange)="load()" style="max-width: 150px;" />
-          <input class="fsearch" type="date" title="Applied To" [(ngModel)]="appliedToFilter" (ngModelChange)="load()" style="max-width: 150px;" />
+          <input class="fsearch" type="date" aria-label="Leave Date From" title="Leave Date From" [(ngModel)]="dateFromFilter" (ngModelChange)="load()" style="max-width: 150px;" />
+          <input class="fsearch" type="date" aria-label="Leave Date To" title="Leave Date To" [(ngModel)]="dateToFilter" (ngModelChange)="load()" style="max-width: 150px;" />
+          <input class="fsearch" type="date" aria-label="Applied From" title="Applied From" [(ngModel)]="appliedFromFilter" (ngModelChange)="load()" style="max-width: 150px;" />
+          <input class="fsearch" type="date" aria-label="Applied To" title="Applied To" [(ngModel)]="appliedToFilter" (ngModelChange)="load()" style="max-width: 150px;" />
           @if (hasActiveFilters()) {
             <span class="clear" role="button" (click)="clearFilters()">Clear all</span>
           }
@@ -205,6 +219,16 @@ const STATUS_OPTIONS = [
             @if (applyError()) {
               <div class="form-error" style="margin: 0 0 14px;">{{ applyError() }}</div>
             }
+            <!-- Every control below is captioned by a sibling
+                 <div class="cell-sub">, which associates nothing — it is a
+                 styled div, not a <label for>, so the caption is visible to a
+                 sighted user and invisible to everything else. The axe sweep
+                 has never flagged these only because it scans this screen with
+                 the Apply card closed; they are unnamed controls the instant
+                 anyone opens it. The caption's own text becomes each control's
+                 aria-label, exactly as form-screen.component.ts puts the plain
+                 field.label on the control itself, and aria-required mirrors
+                 submitApply()'s own required set. -->
             <div class="grid g-2" style="margin-bottom: 12px;">
               <div>
                 <div class="cell-sub">Employee</div>
@@ -213,25 +237,42 @@ const STATUS_OPTIONS = [
               </div>
               <div>
                 <div class="cell-sub">Leave Type</div>
-                <select class="input" [(ngModel)]="applyForm['leave_type_id']">
+                <select class="input" aria-label="Leave Type" aria-required="true" [(ngModel)]="applyForm['leave_type_id']">
                   <option [value]="null">—</option>
                   @for (t of leaveTypes(); track t.id) {
                     <option [value]="t.id">{{ t.name }}</option>
                   }
                 </select>
               </div>
-              <div><div class="cell-sub">From Date</div><input class="input" type="date" [(ngModel)]="applyForm['from_date']" /></div>
-              <div><div class="cell-sub">To Date</div><input class="input" type="date" [(ngModel)]="applyForm['to_date']" /></div>
+              <div><div class="cell-sub">From Date</div><input class="input" type="date" aria-label="From Date" aria-required="true" [(ngModel)]="applyForm['from_date']" /></div>
+              <div><div class="cell-sub">To Date</div><input class="input" type="date" aria-label="To Date" aria-required="true" [(ngModel)]="applyForm['to_date']" /></div>
               <div>
                 <div class="cell-sub">Half-Day</div>
-                <span class="toggle" [class.on]="applyForm['is_half_day']" (click)="applyForm['is_half_day'] = !applyForm['is_half_day']">
+                <!-- A bare <span> cannot be tabbed to, reports no role, and
+                     announces no on/off state — this toggle was not merely
+                     unnamed, it was completely invisible to a keyboard and to
+                     a screen reader. role/aria-checked/tabindex give it the
+                     switch semantics its appearance already implies and
+                     Space/Enter mirror the existing click handler, the same
+                     fix form-screen.component.ts applies to its own toggle. -->
+                <span
+                  class="toggle"
+                  role="switch"
+                  tabindex="0"
+                  aria-label="Half-Day"
+                  [attr.aria-checked]="!!applyForm['is_half_day']"
+                  [class.on]="applyForm['is_half_day']"
+                  (click)="applyForm['is_half_day'] = !applyForm['is_half_day']"
+                  (keydown.enter)="applyForm['is_half_day'] = !applyForm['is_half_day']"
+                  (keydown.space)="$event.preventDefault(); applyForm['is_half_day'] = !applyForm['is_half_day']"
+                >
                   <span class="track"></span>
                 </span>
               </div>
               @if (applyForm['is_half_day']) {
                 <div>
                   <div class="cell-sub">Which Half</div>
-                  <select class="input" [(ngModel)]="applyForm['half_day_session']">
+                  <select class="input" aria-label="Which Half" [(ngModel)]="applyForm['half_day_session']">
                     <option value="FIRST_HALF">First Half</option>
                     <option value="SECOND_HALF">Second Half</option>
                   </select>
@@ -239,7 +280,7 @@ const STATUS_OPTIONS = [
               }
               <div style="grid-column: span 2;">
                 <div class="cell-sub">Reason</div>
-                <textarea class="input" rows="3" [(ngModel)]="applyForm['reason']"></textarea>
+                <textarea class="input" rows="3" aria-label="Reason" aria-required="true" [(ngModel)]="applyForm['reason']"></textarea>
               </div>
               <div>
                 <div class="cell-sub">Remaining for this Leave Type</div>

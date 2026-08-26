@@ -76,10 +76,24 @@ interface FinancialYearOption {
             @if (formError()) {
               <div class="form-error" style="margin: 0 0 14px;">{{ formError() }}</div>
             }
+            <!-- Every control in this card carries an explicit aria-label. The
+                 visible caption above each one is a <div class="cell-sub">, not
+                 a <label for> — a div names nothing in the accessibility tree no
+                 matter how label-like it looks, so each of these announced as a
+                 bare unnamed combo box / edit field. Same defect the filter row
+                 below had, and the same fix (see its comment); these escaped the
+                 axe sweep's count only because both cards are behind a toggle —
+                 showForm(), showStatementCard() — that an automated crawl never
+                 opens. The aria-label text repeats the cell-sub verbatim so the
+                 announced name and the visible caption cannot drift.
+                 aria-required marks the four fields submitForm() actually
+                 rejects (Expense Type, Amount, Expense Date, Description), so a
+                 screen-reader user hears the requirement before submitting
+                 rather than only in the error banner afterwards. -->
             <div class="grid g-2">
               <div>
                 <div class="cell-sub">Expense Type</div>
-                <select class="input" [(ngModel)]="form['expense_type_id']">
+                <select class="input" aria-label="Expense Type" aria-required="true" [(ngModel)]="form['expense_type_id']">
                   <option [value]="null">—</option>
                   @for (t of addFormExpenseTypes(); track t.id) {
                     <option [value]="t.id">{{ t.name }}</option>
@@ -96,7 +110,7 @@ interface FinancialYearOption {
               </div>
               <div>
                 <div class="cell-sub">Vendor</div>
-                <select class="input" [(ngModel)]="form['vendor_id']">
+                <select class="input" aria-label="Vendor" [(ngModel)]="form['vendor_id']">
                   <option [value]="null">—</option>
                   @for (v of vendors(); track v.id) {
                     <option [value]="v.id">{{ v.vendor_name }}</option>
@@ -105,7 +119,7 @@ interface FinancialYearOption {
               </div>
               <div>
                 <div class="cell-sub">Amount</div>
-                <input class="input" type="number" step="0.01" min="0" [(ngModel)]="form['amount']" />
+                <input class="input" type="number" step="0.01" min="0" aria-label="Amount" aria-required="true" [(ngModel)]="form['amount']" />
               </div>
               <!-- §2.1 field order (data.js x.add), verbatim: Type, Claim
                    Type, Vendor, Amount, Tax, Tax Amount, Date, Linked
@@ -114,7 +128,7 @@ interface FinancialYearOption {
               @if (filteredTaxHeads().length) {
                 <div>
                   <div class="cell-sub">Tax Head</div>
-                  <select class="input" [(ngModel)]="form['tax_head_id']">
+                  <select class="input" aria-label="Tax Head" [(ngModel)]="form['tax_head_id']">
                     <option [value]="null">—</option>
                     @for (t of filteredTaxHeads(); track t.id) {
                       <option [value]="t.id">{{ t.tax_name }}</option>
@@ -124,16 +138,16 @@ interface FinancialYearOption {
               }
               <div>
                 <div class="cell-sub">Tax Amount</div>
-                <input class="input" type="number" step="0.01" min="0" [(ngModel)]="form['tax_amount']" placeholder="Optional" />
+                <input class="input" type="number" step="0.01" min="0" aria-label="Tax Amount" [(ngModel)]="form['tax_amount']" placeholder="Optional" />
               </div>
               <div>
                 <div class="cell-sub">Expense Date</div>
-                <input class="input" type="date" [max]="today" [(ngModel)]="form['expense_date']" />
+                <input class="input" type="date" aria-label="Expense Date" aria-required="true" [max]="today" [(ngModel)]="form['expense_date']" />
               </div>
               @if (canSeePurchaseBill()) {
                 <div>
                   <div class="cell-sub">Linked Purchase Bill</div>
-                  <select class="input" [(ngModel)]="form['linked_purchase_bill_id']">
+                  <select class="input" aria-label="Linked Purchase Bill" [(ngModel)]="form['linked_purchase_bill_id']">
                     <option [value]="null">—</option>
                     @for (b of purchaseBills(); track b.id) {
                       <option [value]="b.id">{{ b.purchase_bill_code }}</option>
@@ -143,11 +157,11 @@ interface FinancialYearOption {
               }
               <div style="grid-column: span 2;">
                 <div class="cell-sub">Description</div>
-                <textarea class="input" rows="2" [(ngModel)]="form['description']"></textarea>
+                <textarea class="input" rows="2" aria-label="Description" aria-required="true" [(ngModel)]="form['description']"></textarea>
               </div>
               <div style="grid-column: span 2;">
                 <div class="cell-sub">Receipt</div>
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFileSelected($event)" />
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" aria-label="Receipt" (change)="onFileSelected($event)" />
                 <p class="hint" style="margin: 4px 0 0;">PDF, JPEG or PNG, up to 5 MB. Optional.</p>
               </div>
             </div>
@@ -167,8 +181,14 @@ interface FinancialYearOption {
           <div class="card-body">
             <p class="hint" style="margin: 0 0 10px;">Bank-statement style export — Date, Description, Bank Account, Reference, Debit, Running Balance — covering only Reimbursed claims in the range below, so a claim history can be reconciled line-by-line against the real account statement.</p>
             <div class="filter-row">
-              <div><div class="cell-sub">From</div><input class="input sm" type="date" [(ngModel)]="statementFrom" /></div>
-              <div><div class="cell-sub">To</div><input class="input sm" type="date" [(ngModel)]="statementTo" /></div>
+              <!-- The one place the aria-label does NOT just echo the cell-sub:
+                   "From"/"To" name nothing on their own, and the filter row
+                   below has its own date pair (Expense Date from / Expense Date
+                   to) that can be on screen at the same time as this card. Two
+                   controls both announcing "From" would leave a screen-reader
+                   user no way to tell which range they had landed in. -->
+              <div><div class="cell-sub">From</div><input class="input sm" type="date" aria-label="Statement from" [(ngModel)]="statementFrom" /></div>
+              <div><div class="cell-sub">To</div><input class="input sm" type="date" aria-label="Statement to" [(ngModel)]="statementTo" /></div>
               <button class="btn sm ghost" type="button" [disabled]="!!statementExporting()" (click)="exportStatement('pdf')">
                 {{ statementExporting() === 'pdf' ? 'Exporting…' : 'Export PDF' }}
               </button>
@@ -186,50 +206,67 @@ interface FinancialYearOption {
       <div class="card">
         <div class="card-head">
           <h3>Expense History</h3>
+          <!-- Every control in this filter row carries an explicit aria-label.
+               This bar is label-less by design — the dimension name lives in
+               the "All Expense Types" option or in a tooltip — so before this
+               the axe sweep flagged the title-less select as [critical]
+               select-name, the titled ones as [serious] label-title-only and
+               the two amount boxes as placeholder-only on /expenses/mine. A
+               title is a tooltip, not a label: it never surfaces on touch, it
+               vanishes on keyboard focus, and screen readers announce it only
+               as a last resort; a placeholder is worse still, since it
+               disappears the moment the user types. See
+               list-screen.component.ts's filter-bar comment (and
+               form-screen.component.ts's own [attr.aria-label]) for the full
+               reasoning. The titles and placeholders stay. -->
           <div class="filter-row" style="flex-wrap: wrap;">
             <!-- addFormExpenseTypes(), not reimbursableTypes() — Super Admin/
                  Accountant's OWN history can include a Company-Paid claim
                  they submitted themselves (create_expense_claim sets
                  employee_id: own_id on that branch too), so the filter
                  needs to offer the same set the Add form itself does. -->
-            <select class="input sm" [(ngModel)]="expenseTypeFilter" (ngModelChange)="load()">
+            <select class="input sm" aria-label="Expense Type" [(ngModel)]="expenseTypeFilter" (ngModelChange)="load()">
               <option value="">All Expense Types</option>
               @for (t of addFormExpenseTypes(); track t.id) {
                 <option [value]="t.id">{{ t.name }}</option>
               }
             </select>
-            <select class="input sm" multiple [(ngModel)]="statusFilter" (ngModelChange)="load()" title="Ctrl/Cmd-click to select multiple statuses">
+            <!-- This title is a usage HINT, not the field's name — it was never
+                 a candidate label even in principle, which is why "Status" has
+                 to come from aria-label rather than from reusing the tooltip
+                 the way the Vendor and Bank Account selects below do. -->
+            <select class="input sm" multiple aria-label="Status" [(ngModel)]="statusFilter" (ngModelChange)="load()" title="Ctrl/Cmd-click to select multiple statuses">
               @for (s of STATUS_OPTIONS; track s.value) {
                 <option [value]="s.value">{{ s.label }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="vendorFilter" (ngModelChange)="load()" title="Vendor">
+            <select class="input sm" aria-label="Vendor" [(ngModel)]="vendorFilter" (ngModelChange)="load()" title="Vendor">
               <option value="">All Vendors</option>
               @for (v of vendors(); track v.id) {
                 <option [value]="v.id">{{ v.vendor_name }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="bankAccountFilter" (ngModelChange)="load()" title="Bank Account">
+            <select class="input sm" aria-label="Bank Account" [(ngModel)]="bankAccountFilter" (ngModelChange)="load()" title="Bank Account">
               <option value="">All Accounts</option>
               @for (b of bankAccounts(); track b.id) {
                 <option [value]="b.id">{{ b.label }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="financialYearFilter" (ngModelChange)="load()" title="Financial Year">
+            <select class="input sm" aria-label="Financial Year" [(ngModel)]="financialYearFilter" (ngModelChange)="load()" title="Financial Year">
               <option value="">All Financial Years</option>
               @for (fy of financialYears(); track fy.id) {
                 <option [value]="fy.id">{{ fy.label }}</option>
               }
             </select>
-            <select class="input sm" [(ngModel)]="hasReceiptFilter" (ngModelChange)="load()" title="Has Receipt">
+            <select class="input sm" aria-label="Has Receipt" [(ngModel)]="hasReceiptFilter" (ngModelChange)="load()" title="Has Receipt">
               <option value="">Receipt — Any</option>
               <option value="yes">Yes</option>
               <option value="no">No</option>
             </select>
-            <input class="input sm" type="date" [(ngModel)]="dateFromFilter" (ngModelChange)="load()" [max]="today" title="Expense Date from" />
-            <input class="input sm" type="date" [(ngModel)]="dateToFilter" (ngModelChange)="load()" [max]="today" title="Expense Date to" />
-            <input class="input sm" type="number" min="0" step="0.01" [(ngModel)]="amountMinFilter" (ngModelChange)="load()" placeholder="Min Amount" style="width: 110px;" />
-            <input class="input sm" type="number" min="0" step="0.01" [(ngModel)]="amountMaxFilter" (ngModelChange)="load()" placeholder="Max Amount" style="width: 110px;" />
+            <input class="input sm" type="date" aria-label="Expense Date from" [(ngModel)]="dateFromFilter" (ngModelChange)="load()" [max]="today" title="Expense Date from" />
+            <input class="input sm" type="date" aria-label="Expense Date to" [(ngModel)]="dateToFilter" (ngModelChange)="load()" [max]="today" title="Expense Date to" />
+            <input class="input sm" type="number" min="0" step="0.01" aria-label="Min Amount" [(ngModel)]="amountMinFilter" (ngModelChange)="load()" placeholder="Min Amount" style="width: 110px;" />
+            <input class="input sm" type="number" min="0" step="0.01" aria-label="Max Amount" [(ngModel)]="amountMaxFilter" (ngModelChange)="load()" placeholder="Max Amount" style="width: 110px;" />
             <button class="btn sm ghost" type="button" [disabled]="!!exporting()" (click)="exportList('pdf')">
               {{ exporting() === 'pdf' ? 'Exporting…' : 'Export PDF' }}
             </button>

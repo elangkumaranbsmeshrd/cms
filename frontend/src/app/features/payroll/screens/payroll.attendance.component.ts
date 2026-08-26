@@ -55,16 +55,25 @@ type AttendanceTabKey = 'monthly' | 'daywise' | 'impact' | 'compensation' | 'bio
 
     @if (activeTab() !== 'biometric') {
       <div class="filterbar">
+        <!-- Every control in this bar carries its OWN aria-label. axe read this
+             one row as six [critical] select-name violations plus a [critical]
+             label — the year <input> had no label, no title and no placeholder
+             of any kind, so literally nothing identified it. The first
+             <option> ("All Departments", "Any Hour Status") names the default
+             CHOICE, never the control, and it vanishes the moment a filter is
+             applied, which is the same failure mode as naming a field by its
+             placeholder. Named exactly the way company-expenses.component.ts's
+             filter row is, for the same reason. -->
         <div class="filter-row">
-          <select class="input" style="max-width: 160px;" [(ngModel)]="periodMonth" (ngModelChange)="load()">
+          <select class="input" style="max-width: 160px;" aria-label="Period Month" [(ngModel)]="periodMonth" (ngModelChange)="load()">
             @for (m of monthOptions; track m.value) {
               <option [ngValue]="m.value">{{ m.label }}</option>
             }
           </select>
-          <input class="input" style="max-width: 100px;" type="number" [(ngModel)]="periodYear" (change)="load()" />
+          <input class="input" style="max-width: 100px;" type="number" aria-label="Period Year" [(ngModel)]="periodYear" (change)="load()" />
 
           @if (activeTab() !== 'daywise') {
-            <select class="fselect" [(ngModel)]="departmentId" (ngModelChange)="load()">
+            <select class="fselect" aria-label="Department" [(ngModel)]="departmentId" (ngModelChange)="load()">
               <option [ngValue]="null">All Departments</option>
               @for (opt of departmentOptions(); track opt.id) {
                 <option [ngValue]="opt.id">{{ opt.label }}</option>
@@ -72,7 +81,11 @@ type AttendanceTabKey = 'monthly' | 'daywise' | 'impact' | 'compensation' | 'bio
             </select>
           }
 
-          <select class="fselect" [(ngModel)]="employeeId" (ngModelChange)="load()">
+          <!-- Day-wise Log is the one tab where this filter is MANDATORY — that
+               tab renders an empty state instead of a table until it is set — so
+               aria-required tracks the tab rather than being fixed, and is null
+               (absent) rather than "false" everywhere else. -->
+          <select class="fselect" aria-label="Employee" [attr.aria-required]="activeTab() === 'daywise' ? 'true' : null" [(ngModel)]="employeeId" (ngModelChange)="load()">
             <option [ngValue]="null">{{ activeTab() === 'daywise' ? 'Select an Employee…' : 'All Employees' }}</option>
             @for (opt of employeeOptions(); track opt.id) {
               <option [ngValue]="opt.id">{{ opt.label }}</option>
@@ -80,13 +93,13 @@ type AttendanceTabKey = 'monthly' | 'daywise' | 'impact' | 'compensation' | 'bio
           </select>
 
           @if (activeTab() === 'monthly' || activeTab() === 'impact') {
-            <select class="fselect" [(ngModel)]="workWeekPolicyId" (ngModelChange)="load()">
+            <select class="fselect" aria-label="Work Week Policy" [(ngModel)]="workWeekPolicyId" (ngModelChange)="load()">
               <option [ngValue]="null">All Work Week Policies</option>
               @for (opt of workWeekPolicyOptions(); track opt.id) {
                 <option [ngValue]="opt.id">{{ opt.label }}</option>
               }
             </select>
-            <select class="fselect" [(ngModel)]="hourStatus" (ngModelChange)="load()">
+            <select class="fselect" aria-label="Hour Status" [(ngModel)]="hourStatus" (ngModelChange)="load()">
               <option [ngValue]="null">Any Hour Status</option>
               @for (opt of hourStatusOptions; track opt) {
                 <option [value]="opt">{{ opt }}</option>
@@ -95,7 +108,7 @@ type AttendanceTabKey = 'monthly' | 'daywise' | 'impact' | 'compensation' | 'bio
           }
 
           @if (activeTab() === 'compensation') {
-            <select class="fselect" [(ngModel)]="compensationStatus" (ngModelChange)="load()">
+            <select class="fselect" aria-label="Compensation Status" [(ngModel)]="compensationStatus" (ngModelChange)="load()">
               <option [ngValue]="null">All Statuses</option>
               @for (opt of compensationStatusOptions; track opt.value) {
                 <option [value]="opt.value">{{ opt.label }}</option>

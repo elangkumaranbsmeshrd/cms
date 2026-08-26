@@ -126,7 +126,17 @@ import { ChecklistScreenComponent } from '../checklist-screen/checklist-screen.c
                       @for (action of tabActions; track action.label) {
                         @if (canFireAction(action) && (!action.visible || action.visible(r))) {
                           @if (action.selectParam; as sp) {
-                            <select class="input" style="width: auto;" [(ngModel)]="actionSelectValues[action.label]">
+                            <!-- selectParam.label ("Role" for Create Login) is
+                                 rendered nowhere — the select sits bare beside
+                                 the button, so its accessible name was empty
+                                 and it announced as an unnamed combo box (axe:
+                                 select-name, [critical]). The button next to
+                                 it is named by its own text, which names the
+                                 ACTION, not the value this picker holds. Only
+                                 the automated sweep never caught it because
+                                 the select renders solely when a visible
+                                 action carries a selectParam. -->
+                            <select class="input" style="width: auto;" [attr.aria-label]="sp.label" [(ngModel)]="actionSelectValues[action.label]">
                               @for (opt of sp.options; track opt.value) {
                                 <option [value]="opt.value">{{ opt.label }}</option>
                               }
@@ -150,23 +160,43 @@ import { ChecklistScreenComponent } from '../checklist-screen/checklist-screen.c
                       @for (field of section.fields; track field.label) {
                         @if (!field.hideWhenNoSecondary || secondaryData()[tab.id]) {
                           <div [style.grid-column]="field.span === 2 ? 'span 2' : null">
+                            <!-- This caption is a plain <div>, not a <label>:
+                                 it can carry no "for", so it associates with
+                                 nothing and named none of the edit-mode
+                                 controls below (axe: select-name [critical],
+                                 label [critical]). Every one of them therefore
+                                 carries its own [attr.aria-label] set to the
+                                 same field.label the caption shows — the
+                                 pattern form-screen.component.ts settled on
+                                 for the identical problem, and the reason it
+                                 uses aria-label rather than aria-labelledby
+                                 applies here too: an explicit name on the
+                                 control wins the accessible-name computation
+                                 outright. Turning the caption into a <label
+                                 for> instead would need a per-field generated
+                                 id this shape has no equivalent of. Missed by
+                                 the automated sweep only because these render
+                                 solely in edit mode; the sweep always saw the
+                                 read-only <div> in the else arm. -->
                             <div class="cell-sub" style="margin-bottom: 2px;">{{ field.label }}</div>
                             @if (isEditing() && isFieldEditable(field)) {
                               @if (field.type === 'select') {
-                                <select class="input" [(ngModel)]="formModel[field.key]">
+                                <select class="input" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]">
                                   <option [value]="null">—</option>
                                   @for (opt of selectOptions(field); track opt.id) {
                                     <option [value]="opt.id">{{ opt.label }}</option>
                                   }
                                 </select>
                               } @else if (field.type === 'checkbox') {
-                                <input type="checkbox" [(ngModel)]="formModel[field.key]" />
+                                <input type="checkbox" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]" />
                               } @else if (field.type === 'textarea') {
-                                <textarea class="input" rows="3" [(ngModel)]="formModel[field.key]"></textarea>
+                                <textarea class="input" rows="3" [attr.aria-label]="field.label" [attr.aria-required]="field.required ? 'true' : null" [(ngModel)]="formModel[field.key]"></textarea>
                               } @else {
                                 <input
                                   class="input"
                                   [type]="field.type === 'date' ? 'date' : field.type === 'email' ? 'email' : 'text'"
+                                  [attr.aria-label]="field.label"
+                                  [attr.aria-required]="field.required ? 'true' : null"
                                   [(ngModel)]="formModel[field.key]"
                                 />
                               }

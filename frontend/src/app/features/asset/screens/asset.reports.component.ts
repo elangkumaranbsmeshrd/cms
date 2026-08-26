@@ -72,35 +72,48 @@ interface AssetReportsSummary {
     </div>
 
     <div class="filterbar">
+      <!-- Every control in this hand-rolled filter row carries an explicit
+           aria-label. Nothing here is wrapped in a <label>: the dimension name
+           lives in the "All Categories" option, in a tooltip, or in a
+           placeholder — so the axe sweep flagged the four selects and the two
+           date inputs as [serious] label-title-only and the two number inputs
+           as [critical] label on /assets/reports. A title is a tooltip, not a
+           label: it never surfaces on touch, it vanishes on keyboard focus,
+           and screen readers announce it only as a last resort; a placeholder
+           is worse still, since it disappears the moment the user types. The
+           titles and placeholders stay — they are useful sighted affordances,
+           and title is how the filter E2Es address a filter control — but the
+           NAME now comes from aria-label. Same fix as form-screen.component.ts's
+           own [attr.aria-label] and the company-expenses filter bar. -->
       <div class="filter-row">
-        <select class="fselect" title="Category" [(ngModel)]="filters['category_id']" (ngModelChange)="load()">
+        <select class="fselect" aria-label="Category" title="Category" [(ngModel)]="filters['category_id']" (ngModelChange)="load()">
           <option value="">All Categories</option>
           @for (o of refData.options(CATEGORY_REF) ?? []; track o.id) {
             <option [value]="o.id">{{ o.label }}</option>
           }
         </select>
-        <select class="fselect" title="Location" [(ngModel)]="filters['location_address_id']" (ngModelChange)="load()">
+        <select class="fselect" aria-label="Location" title="Location" [(ngModel)]="filters['location_address_id']" (ngModelChange)="load()">
           <option value="">All Locations</option>
           @for (o of refData.options(LOCATION_REF) ?? []; track o.id) {
             <option [value]="o.id">{{ o.label }}</option>
           }
         </select>
-        <select class="fselect" title="Department" [(ngModel)]="filters['department_id']" (ngModelChange)="load()">
+        <select class="fselect" aria-label="Department" title="Department" [(ngModel)]="filters['department_id']" (ngModelChange)="load()">
           <option value="">All Departments</option>
           @for (o of refData.options(DEPARTMENT_REF) ?? []; track o.id) {
             <option [value]="o.id">{{ o.label }}</option>
           }
         </select>
-        <select class="fselect" title="Assigned Employee" [(ngModel)]="filters['assigned_to']" (ngModelChange)="load()">
+        <select class="fselect" aria-label="Assigned Employee" title="Assigned Employee" [(ngModel)]="filters['assigned_to']" (ngModelChange)="load()">
           <option value="">All Employees</option>
           @for (o of refData.options(EMPLOYEE_REF) ?? []; track o.id) {
             <option [value]="o.id">{{ o.label }}</option>
           }
         </select>
-        <input class="fsearch" type="date" title="Purchase Date From" placeholder="Purchase Date From" [(ngModel)]="filters['purchase_date_from']" (change)="load()" style="max-width: 150px;" />
-        <input class="fsearch" type="date" title="Purchase Date To" placeholder="Purchase Date To" [(ngModel)]="filters['purchase_date_to']" (change)="load()" style="max-width: 150px;" />
-        <input class="fsearch" type="number" placeholder="Purchase Value Min" [(ngModel)]="filters['purchase_value_min']" (change)="load()" style="max-width: 130px;" />
-        <input class="fsearch" type="number" placeholder="Purchase Value Max" [(ngModel)]="filters['purchase_value_max']" (change)="load()" style="max-width: 130px;" />
+        <input class="fsearch" type="date" aria-label="Purchase Date From" title="Purchase Date From" placeholder="Purchase Date From" [(ngModel)]="filters['purchase_date_from']" (change)="load()" style="max-width: 150px;" />
+        <input class="fsearch" type="date" aria-label="Purchase Date To" title="Purchase Date To" placeholder="Purchase Date To" [(ngModel)]="filters['purchase_date_to']" (change)="load()" style="max-width: 150px;" />
+        <input class="fsearch" type="number" aria-label="Purchase Value Min" placeholder="Purchase Value Min" [(ngModel)]="filters['purchase_value_min']" (change)="load()" style="max-width: 130px;" />
+        <input class="fsearch" type="number" aria-label="Purchase Value Max" placeholder="Purchase Value Max" [(ngModel)]="filters['purchase_value_max']" (change)="load()" style="max-width: 130px;" />
       </div>
       <div class="filter-row" style="margin-top: 10px;">
         <span class="cell-sub" style="align-self: center;">Status:</span>
