@@ -113,6 +113,27 @@ async def _clear_other_defaults(db: AsyncSession, exclude_id: str | None) -> Non
         other.is_default = False
 
 
+@router.get("/options", response_model=None)
+async def list_tax_scheme_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    include_inactive: bool = Query(False, description="A historical record may reference a since-deactivated scheme and still needs its label to resolve"),
+) -> list[dict]:
+    """Same contract, same reasoning as masters_lookup.py's own `label_field`
+    docstring: `masters.taxes` is Super-Admin-full / Accountant-view and no
+    access at all for Manager, HR and Employee (seed.py:47), but Tax
+    Declaration needs to name the scheme an employee has chosen. Gated on
+    plain authentication only; selects `scheme_name` and nothing else, so
+    `choice_window`, `is_default`, `description` and the declaration-head
+    counts stay behind the real screen permission.
+    """
+    stmt = select(TaxScheme.id, TaxScheme.scheme_name, TaxScheme.is_active)
+    if not include_inactive:
+        stmt = stmt.where(TaxScheme.is_active.is_(True))
+    rows = (await db.execute(stmt)).all()
+    return [{"id": row_id, "label": scheme_name, "is_active": is_active} for row_id, scheme_name, is_active in rows]
+
+
 @router.get("", response_model=None)
 async def list_tax_schemes(
     db: AsyncSession = Depends(get_db),

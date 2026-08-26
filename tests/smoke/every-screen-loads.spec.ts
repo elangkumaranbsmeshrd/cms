@@ -8,6 +8,7 @@ import {
   findForbiddenText,
   findPlaceholder,
   waitForQuiet,
+  settleProblems,
 } from '../fixtures/console-guard';
 
 /**
@@ -97,6 +98,8 @@ test.describe('every screen loads, for every role that can open it', () => {
           // this, a slow response lands during the NEXT screen's listener
           // window and blames an innocent screen.
           await waitForQuiet(problems);
+          // Finish classifying 404 bodies before judging this screen.
+          await settleProblems(problems);
 
           const body = (await page.locator('body').innerText().catch(() => '')) || '';
 
@@ -113,6 +116,7 @@ test.describe('every screen loads, for every role that can open it', () => {
           issues.push(`navigation threw: ${(err as Error).message}`);
         }
 
+        await settleProblems(problems);
         const gate = summarise(problems);
         if (gate) issues.push(gate);
 

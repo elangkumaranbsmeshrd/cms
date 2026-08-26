@@ -365,6 +365,51 @@ async def get_my_profile(
     return await db.get(Employee, own_id)
 
 
+async def _own_employee_id(db: AsyncSession, current_user: User) -> str:
+    """Resolve the caller's own Employee row, or 404 the way `/me` already does."""
+    own_id = await org_scope.get_own_employee_id(db, current_user)
+    if own_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No Employee record is linked to this login")
+    return own_id
+
+
+# --------------------------------------------------------------------------
+# Self-service reads of one's OWN sub-records.
+#
+# My Profile embeds EmpEmergencyContacts/EmpSalaryStructure/EmpInsurance,
+# passing the signed-in user's own employee id. Those components addressed
+# `/employees/{id}/...`, which is gated on employee.master_record /
+# employee.salary_structure / employee.insurance — the ADMIN screens for
+# looking at OTHER people, correctly 'none' for Employee and Manager. So a
+# person opening their own profile got a bare RBAC 404 on three of its tabs.
+#
+# The admin gates are right and stay untouched. What was missing is the
+# self-service door, which this codebase already has a shape for: `/me`,
+# gated on employee.my_profile, which every role holds. This is the same
+# principle §6 states for expenses — nobody's access to their OWN record
+# should be narrower than a plain Employee's — and the data is a person's own
+# salary and insurance, which they already receive on every payslip.
+#
+# READ ONLY, deliberately. Writes stay on the admin routes: the components'
+# own canEdit() asks policy.can(<admin screen>, 'edit'), which is false for
+# Employee, so nothing here removes an approval step. An employee editing
+# their own salary structure would be a real problem; editing their own
+# emergency contacts is defensible but is a policy decision, and the profile
+# change-request flow already exists for exactly that conversation.
+# --------------------------------------------------------------------------
+@router.get("/me/emergency-contacts", response_model=None)
+async def list_my_emergency_contacts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(MY_PROFILE)),
+) -> list[dict]:
+    own_id = await _own_employee_id(db, current_user)
+    rows = (
+        await db.execute(select(EmployeeEmergencyContact).where(EmployeeEmergencyContact.employee_id == own_id))
+    ).scalars().all()
+    return [apply_field_masking(EmergencyContactOut.model_validate(r).model_dump(), perms) for r in rows]
+
+
 @router.put("/me", response_model=EmployeeOut)
 async def update_my_profile(
     body: MyProfileEditableWrite,

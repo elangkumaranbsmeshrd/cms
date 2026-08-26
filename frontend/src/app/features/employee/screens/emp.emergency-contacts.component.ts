@@ -118,6 +118,23 @@ interface EmergencyContactRow {
 })
 export class EmpEmergencyContactsComponent implements OnInit {
   readonly employeeId = input.required<string>();
+  /** True when this tab is hosted on My Profile, i.e. the record IS the signed-in
+   * user's own. The admin sub-resource routes are gated on the screens that exist
+   * to view OTHER people (employee.master_record / .salary_structure / .insurance),
+   * correctly 'none' for Employee and Manager — so a person opening their own
+   * profile got a bare RBAC 404 here. Self-service reads live under /employees/me,
+   * gated on employee.my_profile, which every role holds. Writes are unaffected:
+   * canEdit() still asks the admin screen, so no approval step is removed. */
+  readonly selfService = input(false);
+
+  /** Base path for this tab's sub-resource — /employees/me/... on My Profile,
+   * /employees/{id}/... on the admin record screen. */
+  protected basePath(): string {
+    return this.selfService()
+      ? `${environment.apiBaseUrl}/employees/me/emergency-contacts`
+      : `${this.basePath()}`;
+  }
+
 
   private readonly http = inject(HttpClient);
   private readonly policy = inject(PolicyStore);
@@ -142,7 +159,7 @@ export class EmpEmergencyContactsComponent implements OnInit {
 
   private load(): void {
     this.isLoading.set(true);
-    this.http.get<EmergencyContactRow[]>(`${environment.apiBaseUrl}/employees/${this.employeeId()}/emergency-contacts`).subscribe({
+    this.http.get<EmergencyContactRow[]>(`${this.basePath()}`).subscribe({
       next: (rows) => {
         this.contacts.set(rows);
         this.isLoading.set(false);
@@ -177,7 +194,7 @@ export class EmpEmergencyContactsComponent implements OnInit {
     }
     this.saving.set(true);
     this.actionError.set(null);
-    const base = `${environment.apiBaseUrl}/employees/${this.employeeId()}/emergency-contacts`;
+    const base = `${this.basePath()}`;
     const req$ = id ? this.http.put(`${base}/${id}`, this.form) : this.http.post(base, this.form);
     req$.subscribe({
       next: () => {
@@ -196,7 +213,7 @@ export class EmpEmergencyContactsComponent implements OnInit {
   protected remove(c: EmergencyContactRow): void {
     if (!window.confirm(`Remove ${c.contact_name} as an emergency contact?`)) return;
     this.actionError.set(null);
-    this.http.delete(`${environment.apiBaseUrl}/employees/${this.employeeId()}/emergency-contacts/${c.id}`).subscribe({
+    this.http.delete(`${this.basePath()}/${c.id}`).subscribe({
       next: () => this.load(),
       error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to remove this contact.'),
     });

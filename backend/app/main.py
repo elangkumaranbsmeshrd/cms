@@ -108,6 +108,9 @@ app.include_router(masters_simple.combined_router, prefix="/api/v1")
 
 # ------------------------------------------------------------------ Phase 2
 app.include_router(employees.router, prefix="/api/v1")
+# me_router BEFORE router: the latter is prefixed /employees/{employee_id}, so
+# "me" would bind as an employee_id and shadow the self-service reads.
+app.include_router(employee_compensation.me_router, prefix="/api/v1")
 app.include_router(employee_compensation.router, prefix="/api/v1")
 app.include_router(employee_documents.router, prefix="/api/v1")
 app.include_router(employee_lifecycle.router, prefix="/api/v1")

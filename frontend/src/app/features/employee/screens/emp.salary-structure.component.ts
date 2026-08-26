@@ -253,6 +253,23 @@ interface SalaryStructureRow {
 })
 export class EmpSalaryStructureComponent implements OnInit {
   readonly employeeId = input.required<string>();
+  /** True when this tab is hosted on My Profile, i.e. the record IS the signed-in
+   * user's own. The admin sub-resource routes are gated on the screens that exist
+   * to view OTHER people (employee.master_record / .salary_structure / .insurance),
+   * correctly 'none' for Employee and Manager — so a person opening their own
+   * profile got a bare RBAC 404 here. Self-service reads live under /employees/me,
+   * gated on employee.my_profile, which every role holds. Writes are unaffected:
+   * canEdit() still asks the admin screen, so no approval step is removed. */
+  readonly selfService = input(false);
+
+  /** Base path for this tab's sub-resource — /employees/me/... on My Profile,
+   * /employees/{id}/... on the admin record screen. */
+  protected basePath(): string {
+    return this.selfService()
+      ? `${environment.apiBaseUrl}/employees/me/salary-structures`
+      : `${this.basePath()}`;
+  }
+
 
   private readonly http = inject(HttpClient);
   private readonly policy = inject(PolicyStore);
@@ -281,7 +298,7 @@ export class EmpSalaryStructureComponent implements OnInit {
   }
 
   private load(): void {
-    const base = `${environment.apiBaseUrl}/employees/${this.employeeId()}/salary-structures`;
+    const base = `${this.basePath()}`;
     this.isLoading.set(true);
     this.http.get<SalaryStructureRow[]>(base).subscribe({
       next: (rows) => {
@@ -320,7 +337,7 @@ export class EmpSalaryStructureComponent implements OnInit {
     this.saving.set(true);
     this.formError.set(null);
     const body = { ...this.form, wage_code_override_reason: this.form['wage_code_override_reason'] || null };
-    this.http.post<SalaryStructureRow>(`${environment.apiBaseUrl}/employees/${this.employeeId()}/salary-structures`, body).subscribe({
+    this.http.post<SalaryStructureRow>(`${this.basePath()}`, body).subscribe({
       next: () => {
         this.saving.set(false);
         this.showForm.set(false);
@@ -336,7 +353,7 @@ export class EmpSalaryStructureComponent implements OnInit {
 
   protected toggleLine(structure: SalaryStructureRow, line: StatutoryLineRow): void {
     this.toggleError.set(null);
-    const url = `${environment.apiBaseUrl}/employees/${this.employeeId()}/salary-structures/${structure.id}/lines/${line.id}/applicability`;
+    const url = `${this.basePath()}/${structure.id}/lines/${line.id}/applicability`;
     this.http.put(url, { is_applicable: !line.is_applicable }).subscribe({
       next: () => this.load(),
       error: (err) => this.toggleError.set(err?.error?.detail ?? 'Failed to update.'),

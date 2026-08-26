@@ -118,6 +118,28 @@ def _resolve_saturday_pattern(saturday_date, saturday_rule: str) -> str:
     return "WEEK_OFF"  # CUSTOM — no rule to derive from; the override IS the answer
 
 
+@router.get("/options", response_model=None)
+async def list_policy_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    include_inactive: bool = Query(False, description="A past attendance period may name a since-retired policy and still needs its label to resolve"),
+) -> list[dict]:
+    """The `label_field`/`/options` contract masters_lookup.py documents,
+    applied to Work Week Policies: `masters.work_week_hours` is Super-Admin-full,
+    Manager/HR view, and nothing at all for Accountant and Employee
+    (seed.py:123), while Payroll → Attendance labels the policy each employee
+    resolved under. Gated on plain authentication only; selects `policy_name`
+    and nothing else, so the hours arithmetic this master is really about
+    (gross/break/net hours, weekly target, Saturday rule, compensation window)
+    stays behind the real screen permission.
+    """
+    stmt = select(WorkWeekPolicy.id, WorkWeekPolicy.policy_name, WorkWeekPolicy.is_active)
+    if not include_inactive:
+        stmt = stmt.where(WorkWeekPolicy.is_active.is_(True))
+    rows = (await db.execute(stmt)).all()
+    return [{"id": row_id, "label": policy_name, "is_active": is_active} for row_id, policy_name, is_active in rows]
+
+
 @router.get("", response_model=None)
 async def list_policies(
     db: AsyncSession = Depends(get_db),

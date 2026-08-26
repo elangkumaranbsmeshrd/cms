@@ -42,6 +42,7 @@ from app.models.masters import InsurancePlan, TaxHead, TaxHeadSlabBand
 from app.models.platform import User
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
+from app.services import org_scope
 from app.schemas.employee import (
     InsuranceDependentWrite,
     InsuranceEnrollmentOut,
@@ -58,6 +59,63 @@ from app.services.salary_engine import StatutoryLineAmount, compute_gross_monthl
 router = APIRouter(prefix="/employees/{employee_id}", tags=["employee"])
 SALARY_STRUCTURE = "employee.salary_structure"
 INSURANCE = "employee.insurance"
+MY_PROFILE = "employee.my_profile"
+
+# Self-service reads of one's OWN compensation records, on their own router so
+# the literal path wins: this module's main router is prefixed
+# /employees/{employee_id}, and "me" would otherwise bind as an employee_id and
+# quietly return an empty list for anyone who DOES hold the admin screen.
+# main.py includes this ahead of `router` for that reason.
+#
+# Why these exist at all: My Profile embeds EmpSalaryStructure/EmpInsurance
+# with the signed-in user's own id, and the admin routes below are gated on
+# employee.salary_structure / employee.insurance — correctly 'none' for
+# Employee and Manager, since those screens exist to look at OTHER people. So
+# a person opening their own profile got a bare RBAC 404 on two of its tabs.
+# The admin gates stay exactly as they are; this is the self-service door,
+# gated on employee.my_profile, which every role holds. Same principle §6
+# states for expenses: nobody's access to their OWN record should be narrower
+# than a plain Employee's — and this is a person's own salary and insurance,
+# which they already receive on every payslip.
+#
+# READ ONLY. Writes stay admin-gated below; the components' own canEdit()
+# asks policy.can(<admin screen>, 'edit'), so nothing here removes a control.
+me_router = APIRouter(prefix="/employees/me", tags=["employee"])
+
+
+async def _require_own_employee_id(db: AsyncSession, current_user: User) -> str:
+    own_id = await org_scope.get_own_employee_id(db, current_user)
+    if own_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No Employee record is linked to this login")
+    return own_id
+
+
+@me_router.get("/salary-structures", response_model=list[SalaryStructureOut])
+async def list_my_salary_structures(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(MY_PROFILE)),
+) -> list[SalaryStructureOut]:
+    own_id = await _require_own_employee_id(db, current_user)
+    rows = (
+        await db.execute(
+            select(SalaryStructure).where(SalaryStructure.employee_id == own_id).order_by(SalaryStructure.effective_from.desc())
+        )
+    ).scalars().all()
+    return await _to_outs(db, list(rows))
+
+
+@me_router.get("/insurance-enrollments", response_model=list[InsuranceEnrollmentOut])
+async def list_my_insurance_enrollments(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(MY_PROFILE)),
+) -> list[InsuranceEnrollmentOut]:
+    own_id = await _require_own_employee_id(db, current_user)
+    rows = (
+        await db.execute(select(EmployeeInsuranceEnrollment).where(EmployeeInsuranceEnrollment.employee_id == own_id))
+    ).scalars().all()
+    return await _insurance_to_outs(db, list(rows))
 
 
 logger = logging.getLogger(__name__)

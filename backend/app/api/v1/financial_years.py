@@ -67,6 +67,53 @@ def _masked_fy_out(fy: FinancialYear, locked_by_name: str | None, perms: Permiss
     return apply_field_masking(out.model_dump(), perms)
 
 
+@router.get("/options", response_model=None)
+async def list_financial_year_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """2026-08 RBAC audit fix — the same `label_field`/`/options` contract
+    masters_lookup.py documents (Payment Mode, HSN/SAC Code) and
+    masters_bank_accounts.py already follows, applied to the one lookup that
+    every single screen needs: this router is Super-Admin-only at the screen
+    level (seed.py:46, `masters.financial_year`: _super_admin_only), but the
+    Financial Year pill lives in the TOPBAR and the "This Financial Year" /
+    "Last Financial Year" date-range presets are part of RBAC §2.2(c)'s
+    baseline filter set on every list, report, board and calendar screen. So
+    Manager/Accountant/HR/Employee were 404ing on `GET /masters/financial-years`
+    on essentially every page they can open — while the correct answer is
+    emphatically NOT to widen their screen mode in seed.py, which would also
+    hand them the standalone Financial Year master (Create / Lock / Unlock /
+    Set Current) that §3.1 reserves for Super Admin.
+
+    Gated on plain authentication only, and returns exactly the five fields
+    the two real consumers read and no more:
+      - `label` + `is_current` — topbar.component.ts's FinancialYearRow, for
+        the "FY 2026" pill.
+      - `start_date` + `end_date` — date-presets.ts's FinancialYearLike. These
+        ARE the preset: `buildDatePresets` resolves "This Financial Year" to
+        the row's own two dates precisely so nothing hardcodes an April start.
+        A picker that cannot read them cannot filter by financial year at all,
+        which is the whole point of the control.
+    Deliberately withheld, unlike `list_financial_years` below: `status`,
+    `locked_at` and `locked_by_name` — the lifecycle state the Super-Admin-only
+    screen exists to manage, which no dropdown or preset needs. Ordered
+    newest-first, same as the real list.
+    """
+    rows = (
+        await db.execute(
+            select(
+                FinancialYear.id, FinancialYear.label, FinancialYear.start_date,
+                FinancialYear.end_date, FinancialYear.is_current,
+            ).order_by(FinancialYear.start_date.desc())
+        )
+    ).all()
+    return [
+        {"id": fy_id, "label": label, "start_date": start_date, "end_date": end_date, "is_current": is_current}
+        for fy_id, label, start_date, end_date, is_current in rows
+    ]
+
+
 @router.get("", response_model=None)
 async def list_financial_years(
     db: AsyncSession = Depends(get_db),

@@ -209,14 +209,14 @@ const APPROVAL_FIELDS: readonly { readonly key: string; readonly label: string; 
       <div class="card" style="margin-bottom: 16px;">
         <div class="card-head"><h3>Emergency Contact</h3></div>
         <div class="card-body" style="padding: 0;">
-          <app-emp-emergency-contacts [employeeId]="r.id" />
+          <app-emp-emergency-contacts [employeeId]="r.id" [selfService]="true" />
         </div>
       </div>
 
       <div class="card" style="margin-bottom: 16px;">
         <div class="card-head"><h3>Salary Structure (view only)</h3></div>
         <div class="card-body" style="padding: 0;">
-          <app-emp-salary-structure [employeeId]="r.id" />
+          <app-emp-salary-structure [employeeId]="r.id" [selfService]="true" />
         </div>
       </div>
 
@@ -229,7 +229,7 @@ const APPROVAL_FIELDS: readonly { readonly key: string; readonly label: string; 
                button on policy.can('employee.insurance', 'edit'), so this
                naturally renders read-only for every role that tab is
                read-only for, with no separate prop needed here. -->
-          <app-emp-insurance [employeeId]="r.id" />
+          <app-emp-insurance [employeeId]="r.id" [selfService]="true" />
         </div>
       </div>
 

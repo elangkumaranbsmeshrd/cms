@@ -17,6 +17,10 @@ export interface PageProblems {
    * actually issued it rather than on whichever screen is walked next.
    */
   lastActivityAt: number;
+  /** Reads whose body identified them as a deliberate domain state. */
+  expectedEmptyStates: string[];
+  /** In-flight body reads; await via settleProblems() before judging. */
+  pendingReads: Promise<void>[];
 }
 
 /**
@@ -29,6 +33,14 @@ const IGNORED_CONSOLE = [
   /Angular is running in development mode/i,
   // Chrome emits this for any favicon miss; it is not an app failure.
   /favicon\.ico/i,
+  // The browser narrates EVERY 4xx/5xx as "Failed to load resource: the
+  // server responded with a status of NNN". That is not app code logging an
+  // error, and it carries strictly less information than the response
+  // listener below, which reads the body and can tell an RBAC denial from a
+  // deliberate domain empty state. Keeping both double-counts the same event
+  // and re-reports as a failure exactly what the listener just cleared.
+  // Real console.error() calls from application code are still caught.
+  /^Failed to load resource: the server responded with a status of \d+/i,
 ];
 
 /** Requests the browser makes that a 4xx on is not an app defect. */
@@ -40,6 +52,8 @@ export function watchForProblems(page: Page): PageProblems {
     pageErrors: [],
     failedRequests: [],
     lastActivityAt: Date.now(),
+    expectedEmptyStates: [],
+    pendingReads: [],
   };
 
   page.on('request', () => {
@@ -65,7 +79,55 @@ export function watchForProblems(page: Page): PageProblems {
     if (status < 400) return;
     const url = res.url();
     if (IGNORED_REQUESTS.some((re) => re.test(url))) return;
-    problems.failedRequests.push(`${status} ${res.request().method()} ${url}`);
+
+    const line = `${status} ${res.request().method()} ${url}`;
+
+    // A 404 is two completely different events in this API, and conflating
+    // them made correct behaviour look like breakage.
+    //
+    //   {"detail":"Not found"}  -> RBAC denial. require_screen 404s rather
+    //      than 403s so an invisible screen cannot be probed. On a screen the
+    //      role is supposed to use, that IS a bug.
+    //   {"detail":"No Employee record is linked to this login"} -> a domain
+    //      empty state, deliberately worded, already handled by the UI. A
+    //      Super Admin who is not in the HR system is a legitimate production
+    //      state, not a defect.
+    //
+    // Classify by what the response SAYS, not by its URL — an allow-list of
+    // paths would silently absorb a real RBAC failure on the same endpoint.
+    // Applies to GET only, and only to the two codes that mean "I cannot give
+    // you data, and here is why": 404 (absent) and 409 (preconditions not
+    // configured). A GET that explains itself is reporting a STATE. Writes stay
+    // strict, and a 400/422 on a read still fails — that would mean the client
+    // sent something malformed, which is a defect.
+    const isRead = res.request().method() === 'GET';
+    if (isRead && (status === 404 || status === 409)) {
+      problems.pendingReads.push(
+        res
+          .text()
+          .then((body) => {
+            let detail = '';
+            try {
+              detail = String(JSON.parse(body)?.detail ?? '');
+            } catch {
+              detail = body.slice(0, 120);
+            }
+            // A bare, generic message means a gate produced it, not the domain.
+            if (/^(not found|forbidden|conflict)$/i.test(detail.trim()) || detail.trim() === '') {
+              problems.failedRequests.push(line);
+            } else {
+              problems.expectedEmptyStates.push(`${line} — ${detail}`);
+            }
+          })
+          .catch(() => {
+            // Body unavailable (redirect, aborted). Fail closed: report it.
+            problems.failedRequests.push(line);
+          }),
+      );
+      return;
+    }
+
+    problems.failedRequests.push(line);
   });
 
   return problems;
@@ -115,6 +177,12 @@ export function summarise(problems: PageProblems): string {
   if (problems.consoleErrors.length) parts.push(`console: ${problems.consoleErrors.join(' | ')}`);
   if (problems.failedRequests.length) parts.push(`network: ${problems.failedRequests.join(' | ')}`);
   return parts.join('\n');
+}
+
+/** Resolve every in-flight response-body read, so 404/409 classification is
+ * complete before a screen is judged. */
+export async function settleProblems(problems: PageProblems): Promise<void> {
+  await Promise.allSettled(problems.pendingReads);
 }
 
 /**

@@ -14,7 +14,7 @@ and is migrated, but no API sits in front of it yet.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,6 +138,41 @@ async def update_company_profile(
 
 
 # ------------------------------------------------------------------ Addresses
+@router.get("/addresses/options", response_model=None)
+async def list_address_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    include_inactive: bool = Query(False, description="An employee or asset may still sit at a since-retired location and needs its label to resolve"),
+) -> list[dict]:
+    """The `label_field`/`/options` contract masters_lookup.py documents,
+    applied to Company Addresses: `masters.company_profile` is Super-Admin-full
+    / Manager-view and nothing at all for Accountant, HR and Employee
+    (seed.py:69), but a company address is what Employee's Work Location and
+    every Asset Location picker point at — so Accountant and HR were 404ing on
+    `GET /masters/company-profile/addresses` across the Employee and Asset
+    modules. Widening `masters.company_profile` in seed.py would also open the
+    company's GSTIN/PAN/TAN/CIN singleton and its number-prefix rules, which is
+    exactly the over-grant that docstring exists to prevent.
+
+    Gated on plain authentication only, and returns ONE composed display
+    string per row rather than the address record: `line1, city`. That is
+    already the minimum a location picker can be read by — line1 alone does not
+    distinguish two offices in different cities, city alone does not
+    distinguish two offices in the same one — and it is the company's own
+    published address, printed on every invoice its counterparties receive.
+    `state_id`, `pin_code`, `line2`, `address_type` and `is_primary` are
+    deliberately not selected, so nothing beyond that one label is reachable.
+    """
+    stmt = select(CompanyAddress.id, CompanyAddress.line1, CompanyAddress.city, CompanyAddress.is_active)
+    if not include_inactive:
+        stmt = stmt.where(CompanyAddress.is_active.is_(True))
+    rows = (await db.execute(stmt)).all()
+    return [
+        {"id": row_id, "label": ", ".join(part for part in (line1, city) if part), "is_active": is_active}
+        for row_id, line1, city, is_active in rows
+    ]
+
+
 @router.get("/addresses", response_model=None)
 async def list_addresses(
     db: AsyncSession = Depends(get_db),

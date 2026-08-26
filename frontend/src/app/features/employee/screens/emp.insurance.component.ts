@@ -176,6 +176,23 @@ interface PlanOption {
 })
 export class EmpInsuranceComponent implements OnInit {
   readonly employeeId = input.required<string>();
+  /** True when this tab is hosted on My Profile, i.e. the record IS the signed-in
+   * user's own. The admin sub-resource routes are gated on the screens that exist
+   * to view OTHER people (employee.master_record / .salary_structure / .insurance),
+   * correctly 'none' for Employee and Manager — so a person opening their own
+   * profile got a bare RBAC 404 here. Self-service reads live under /employees/me,
+   * gated on employee.my_profile, which every role holds. Writes are unaffected:
+   * canEdit() still asks the admin screen, so no approval step is removed. */
+  readonly selfService = input(false);
+
+  /** Base path for this tab's sub-resource — /employees/me/... on My Profile,
+   * /employees/{id}/... on the admin record screen. */
+  protected basePath(): string {
+    return this.selfService()
+      ? `${environment.apiBaseUrl}/employees/me/insurance-enrollments`
+      : `${this.basePath()}`;
+  }
+
 
   private readonly http = inject(HttpClient);
   private readonly policy = inject(PolicyStore);
@@ -216,7 +233,7 @@ export class EmpInsuranceComponent implements OnInit {
 
   private load(): void {
     this.isLoading.set(true);
-    this.http.get<EnrollmentRow[]>(`${environment.apiBaseUrl}/employees/${this.employeeId()}/insurance-enrollments`).subscribe({
+    this.http.get<EnrollmentRow[]>(`${this.basePath()}`).subscribe({
       next: (rows) => {
         this.enrollments.set(rows);
         this.isLoading.set(false);
@@ -254,7 +271,7 @@ export class EmpInsuranceComponent implements OnInit {
     this.saving.set(true);
     this.formError.set(null);
     const body = { insurance_plan_id: this.form['insurance_plan_id'], enrollment_date: this.form['enrollment_date'], dependents: [], nominees };
-    this.http.post(`${environment.apiBaseUrl}/employees/${this.employeeId()}/insurance-enrollments`, body).subscribe({
+    this.http.post(`${this.basePath()}`, body).subscribe({
       next: () => {
         this.saving.set(false);
         this.showForm.set(false);
@@ -274,7 +291,7 @@ export class EmpInsuranceComponent implements OnInit {
     const relationship = window.prompt('Relationship?') ?? '';
     this.actionError.set(null);
     this.http
-      .post(`${environment.apiBaseUrl}/employees/${this.employeeId()}/insurance-enrollments/${enrollment.id}/dependents`, { dependent_name: name, relationship, display_order: enrollment.dependents.length })
+      .post(`${this.basePath()}/${enrollment.id}/dependents`, { dependent_name: name, relationship, display_order: enrollment.dependents.length })
       .subscribe({
         next: () => this.load(),
         error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to add dependent.'),
@@ -287,7 +304,7 @@ export class EmpInsuranceComponent implements OnInit {
     const relationship = window.prompt('Relationship?') ?? '';
     this.actionError.set(null);
     this.http
-      .post(`${environment.apiBaseUrl}/employees/${this.employeeId()}/insurance-enrollments/${enrollment.id}/nominees`, { nominee_name: name, relationship, contact_phone: null, is_primary: enrollment.nominees.length === 0 })
+      .post(`${this.basePath()}/${enrollment.id}/nominees`, { nominee_name: name, relationship, contact_phone: null, is_primary: enrollment.nominees.length === 0 })
       .subscribe({
         next: () => this.load(),
         error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to add nominee.'),
@@ -297,7 +314,7 @@ export class EmpInsuranceComponent implements OnInit {
   protected endEnrollment(enrollment: EnrollmentRow): void {
     if (!window.confirm('End this enrollment? The employee will no longer be covered by this plan.')) return;
     this.actionError.set(null);
-    this.http.post(`${environment.apiBaseUrl}/employees/${this.employeeId()}/insurance-enrollments/${enrollment.id}/end`, {}).subscribe({
+    this.http.post(`${this.basePath()}/${enrollment.id}/end`, {}).subscribe({
       next: () => this.load(),
       error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to end enrollment.'),
     });
