@@ -1,0 +1,62 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v1/masters/bank-accounts",
+    "severity": "BROKEN",
+    "status_observed": "500 {\"detail\":\"Internal server error\"} \u00e2\u20ac\u201d reproducible on three separate CHECK constraints",
+    "what_is_wrong": "create_bank_account catches only sqlalchemy.exc.IntegrityError, but MySQL CHECK-constraint failures (error 3819) are raised as sqlalchemy.exc.OperationalError. Any body that violates ck_bank_accounts_ifsc, ck_bank_accounts_type, or ck_bank_accounts_number escapes the handler as an unhandled exception and becomes a 500 instead of a clean 4xx. Duplicate nickname / account_number (a true IntegrityError) IS handled correctly and returns 409, which is what masks the gap.",
+    "evidence": "REQ: POST /api/v1/masters/bank-accounts  {\"nickname\":\"QA Bad IFSC\",\"bank_name\":\"Kotak Mahindra Bank\",\"account_holder_name\":\"Meshrd Technologies Private Limited\",\"account_number\":\"333444555666\",\"confirm_account_number\":\"333444555666\",\"account_type\":\"SAVINGS\",\"ifsc\":\"XX1234\",\"branch\":\"QA Branch\",\"is_active\":true}\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nREQ: same body but account_type=\"FIXED\", nickname=\"QA Bad Type\", account_number=\"444555666777\"\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nREQ: same body but account_number=\"ABCDEFGHIJ\", nickname=\"QA Bad Num\"\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nControl (IntegrityError path works): POST with duplicate nickname \"QA Test Bank Acct\" -> 409 {\"detail\":\"Duplicate nickname or account number\"}\n\nRoot cause confirmed against the same DB: INSERT INTO bank_accounts (...ifsc='XX1234'...) raises\n  EXC CLASS: (<class 'sqlalchemy.exc.OperationalError'>, <class 'sqlalchemy.exc.DatabaseError'>, <class 'sqlalchemy.exc.DBAPIError'>, ...)\n  MSG: (pymysql.err.OperationalError) (3819, \"Check constraint 'ck_bank_accounts_ifsc' is violated.\")\nOperationalError is NOT a subclass of IntegrityError. app/api/v1/masters_company_profile.py:48 gets this right by catching DBAPIError; this file does not.",
+    "suspected_cause": "D:\\Projects\\Company Management Software\\backend\\app\\api\\v1\\masters_bank_accounts.py:172 (except IntegrityError in create_bank_account) \u00e2\u20ac\u201d should be DBAPIError",
+    "verdict": "CONFIRMED",
+    "category": "error-handling",
+    "short_summary": "Bad IFSC/type/account_number 500s instead of 4xx",
+    "file": "app/api/v1/masters_bank_accounts.py",
+    "line": 172,
+    "group": "masters-company"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/masters/email-configuration/server-settings",
+    "severity": "BROKEN",
+    "status_observed": "500 {\"detail\":\"Internal server error\"} \u00e2\u20ac\u201d four independent invalid-value cases",
+    "what_is_wrong": "upsert_server_settings has no try/except around db.commit() at all, so every DB-level rejection surfaces as an unhandled 500 rather than a validation error. Four reachable cases: an encryption value outside STARTTLS/SSL_TLS/NONE (ck_ess_encryption), a provider outside the five allowed (ck_ess_provider), switching provider to a non-CUSTOM_SMTP value without supplying api_key (ck_ess_api_key), and smtp_port outside 1..65535 (ck_ess_port). None of these are validated in EmailServerSettingsWrite, so the API accepts the body and then blows up. The provider-switch case is the realistic one: an admin moving from Custom SMTP to Mailgun and saving before pasting the key gets a 500.",
+    "evidence": "Base body (valid, previously accepted with 200): {\"sending_enabled\":true,\"provider\":\"CUSTOM_SMTP\",\"smtp_host\":\"smtp.qa-test.example\",\"smtp_port\":2525,\"encryption\":\"SSL_TLS\",\"username\":\"qa@meshrd.in\",\"from_name\":\"QA Sender 2\",\"from_email\":\"qa-noreply@meshrd.in\",\"reply_to_email\":\"qa-reply@meshrd.in\"}\n\nREQ: PUT ...server-settings, base with encryption=\"SSL\"\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nREQ: PUT ...server-settings, base with provider=\"MAILGUN\" (no api_key)\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nREQ: PUT ...server-settings, base with provider=\"BOGUS_PROVIDER\"\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nREQ: PUT ...server-settings, base with smtp_port=99999\nRESP: 500 {\"detail\":\"Internal server error\"}\n\nDB constraints these hit (information_schema.CHECK_CONSTRAINTS): ck_ess_encryption = encryption in ('STARTTLS','SSL_TLS','NONE'); ck_ess_provider = provider in ('CUSTOM_SMTP','SENDGRID','SES','MAILGUN','POSTMARK'); ck_ess_api_key = provider='CUSTOM_SMTP' or api_key_encrypted is not null; ck_ess_port = smtp_port between 1 and 65535.\nGET ...server-settings after all four still returned the pre-call row intact, so no partial write.",
+    "suspected_cause": "D:\\Projects\\Company Management Software\\backend\\app\\api\\v1\\masters_email_config.py:137 (bare `await db.commit()` in upsert_server_settings, no DBAPIError catch and no Pydantic enum validation on provider/encryption)",
+    "verdict": "CONFIRMED",
+    "category": "error-handling",
+    "short_summary": "Invalid provider/encryption/port 500s the settings save",
+    "file": "app/api/v1/masters_email_config.py",
+    "line": 137,
+    "group": "masters-company"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/masters/bank-accounts/{account_id}/set-default",
+    "severity": "WRONG",
+    "status_observed": "200 {\"nickname\":\"Meshrd Current \u00e2\u20ac\u201d Coimbatore\",...,\"is_default\":true,\"is_active\":false}",
+    "what_is_wrong": "set-default accepts a deactivated account and makes it the company default, producing exactly the is_default=true + is_active=false state that the deactivate endpoint and the DB trigger trg_bank_accounts_reject_deactivate_default exist to prevent. The trigger only fires when OLD.is_default=1 AND NEW.is_default=1 AND NEW.is_active=0, so approaching the same state from the other direction (row already inactive, then flipped to default) passes unchecked. The resulting default account does not even appear in GET /masters/bank-accounts/options, which is active-only, so downstream pickers cannot show or resolve the company's own default.",
+    "evidence": "Target is a pre-existing seeded account, is_active=false, is_default=false:\n  GET /api/v1/masters/bank-accounts -> {\"id\":\"ec6807d4-6f4d-4f47-853a-e00ad7b243aa\",\"nickname\":\"Meshrd Current \u00e2\u20ac\u201d Coimbatore\",...,\"is_default\":false,\"is_active\":false}\n\nREQ: POST /api/v1/masters/bank-accounts/ec6807d4-6f4d-4f47-853a-e00ad7b243aa/set-default   (no body)\nRESP: 200 {\"id\":\"ec6807d4-6f4d-4f47-853a-e00ad7b243aa\",\"nickname\":\"Meshrd Current \u00e2\u20ac\u201d Coimbatore\",\"bank_name\":\"Axis Bank\",\"account_holder_name\":\"Meshrd Technologies Private Limited\",\"account_number\":\"500300003356\",\"account_type\":\"CURRENT\",\"ifsc\":\"UTIB0000412\",\"branch\":\"RS Puram\",\"upi_id\":null,\"upi_qr_file_id\":null,\"is_default\":true,\"is_active\":false,\"is_referenced\":false}\n\nGET /api/v1/masters/bank-accounts (nickname, is_default, is_active):\n  ('Meshrd Current \u00e2\u20ac\u201d Chennai', False, True), ('Meshrd Payroll Account', False, True), ('Meshrd Current \u00e2\u20ac\u201d Coimbatore', True, False), ('QA Test Bank Acct (edited)', False, True)\nGET /api/v1/masters/bank-accounts/options -> ['Meshrd Current \u00e2\u20ac\u201d Chennai','Meshrd Payroll Account','QA Test Bank Acct (edited)'] \u00e2\u20ac\u201d the default is absent.\n\nContrast, the guard that does exist: POST /api/v1/masters/bank-accounts/607ee600-.../deactivate while that row was default -> 409 {\"detail\":\"Choose a new default account before deactivating this one\"}\n(State restored afterwards: all three seeded accounts back to is_default=0.)",
+    "suspected_cause": "D:\\Projects\\Company Management Software\\backend\\app\\api\\v1\\masters_bank_accounts.py:223 (set_default checks only that the row exists; no `if not target.is_active` guard mirroring deactivate's is_default guard at line 253)",
+    "verdict": "CONFIRMED",
+    "category": "correctness",
+    "short_summary": "Deactivated bank account can be made the default",
+    "file": "app/api/v1/masters_bank_accounts.py",
+    "line": 223,
+    "group": "masters-company"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/masters/company-profile/addresses/{address_id}/deactivate",
+    "severity": "WRONG",
+    "status_observed": "200 {\"id\":\"8cd6d0d3-...\",\"is_primary\":true,\"is_active\":false}",
+    "what_is_wrong": "deactivate_address has no guard whatsoever, so the company's PRIMARY address can be deactivated and stays flagged primary while inactive \u00e2\u20ac\u201d the same invariant hole as bank accounts, but here neither an API check nor a DB trigger exists. It is worse than the bank case because it is irreversible: set-primary also accepts an already-inactive address (silently demoting the real REGISTERED_OFFICE primary), and there is NO /activate counterpart route, so an address deactivated by mistake can never be re-enabled through the API.",
+    "evidence": "1) No activate route exists:\n   REQ: POST /api/v1/masters/company-profile/addresses/8cd6d0d3-6ac6-4432-83d7-d7af1b414a4f/activate\n   RESP: 404 {\"detail\":\"Not Found\"}   (confirmed against the OpenAPI spec: addresses expose only deactivate and set-primary)\n\n2) Deactivating the primary is allowed, no guard:\n   POST .../addresses/8cd6d0d3-.../set-primary -> 200 (is_primary=true)\n   REQ: POST /api/v1/masters/company-profile/addresses/8cd6d0d3-6ac6-4432-83d7-d7af1b414a4f/deactivate   (no body)\n   RESP: 200 {\"address_type\":\"CORRESPONDENCE\",\"line1\":\"QA Updated Line 1\",\"line2\":null,\"city\":\"Hosur\",\"state_id\":\"b2915984-92d1-47bc-ba06-d7a3d2ea23ca\",\"pin_code\":\"635109\",\"id\":\"8cd6d0d3-6ac6-4432-83d7-d7af1b414a4f\",\"is_primary\":true,\"is_active\":false}\n\n3) set-primary also accepts an inactive address and demotes the live one:\n   REQ: POST /api/v1/masters/company-profile/addresses/8cd6d0d3-.../set-primary  (row was is_active=false)\n   RESP: 200 {...\"is_primary\":true,\"is_active\":false}\n   GET /api/v1/masters/company-profile/addresses (id[:8], type, is_primary, is_active):\n     ('1fb785b1','REGISTERED_OFFICE',False,True) ('51931d87','BRANCH_OFFICE',False,True) ('8cd6d0d3','CORRESPONDENCE',True,False) ('cdf00f1c','BRANCH_OFFICE',False,True)\n(All seeded addresses restored afterwards: 1fb785b1 is primary and active again; my test address was removed.)",
+    "suspected_cause": "D:\\Projects\\Company Management Software\\backend\\app\\api\\v1\\masters_company_profile.py:237 (deactivate_address sets is_active=False with no is_primary check) and :210 (set_primary_address has no is_active check); no /addresses/{id}/activate route is defined in the file",
+    "verdict": "CONFIRMED",
+    "category": "correctness",
+    "short_summary": "Primary address can be deactivated, with no way back",
+    "file": "app/api/v1/masters_company_profile.py",
+    "line": 237,
+    "group": "masters-company"
+  }
+]
