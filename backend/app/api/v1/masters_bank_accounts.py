@@ -4,11 +4,12 @@ verification pass) and A009's "Confirm Account Number must match but is never
 stored" rule.
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -22,8 +23,32 @@ from app.schemas.masters import BankAccountCreate, BankAccountOut, BankAccountUp
 from app.services import list_export
 from app.services.pdf_engine import ColumnSpec
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/masters/bank-accounts", tags=["masters"])
 SCREEN = "masters.bank_accounts"
+
+# Migration 0002's CHECK constraints on bank_accounts, mapped to the message a
+# user can actually act on. MySQL raises a CHECK failure (error 3819) as an
+# OperationalError, NOT an IntegrityError — so the `except IntegrityError` that
+# used to sit on every commit here caught duplicate nickname/account_number and
+# nothing else, and a bad IFSC / account type / account number escaped as an
+# unhandled 500. Caught as DBAPIError now (the base of both), same split as
+# masters_company_profile.py's own _as_client_error.
+_CHECK_CONSTRAINT_MESSAGES = {
+    "ck_bank_accounts_number": "Account Number must be 9 to 18 digits, no spaces or letters",
+    "ck_bank_accounts_type": "Account Type must be CURRENT or SAVINGS",
+    "ck_bank_accounts_ifsc": "IFSC must be 11 characters: 4 letters, then 0, then 6 letters or digits (e.g. HDFC0001234)",
+}
+
+
+def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
+    logger.warning("db constraint violation: %s", exc.orig)
+    text = str(exc.orig)
+    for constraint, message in _CHECK_CONSTRAINT_MESSAGES.items():
+        if constraint in text:
+            return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
+    return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 
 _LIST_COLUMNS = [
     ColumnSpec("nickname", "Nickname"),
@@ -169,9 +194,9 @@ async def create_bank_account(
     db.add(row)
     try:
         await db.commit()
-    except IntegrityError as exc:
+    except DBAPIError as exc:
         await db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Duplicate nickname or account number") from exc
+        raise _as_client_error(exc, "Duplicate nickname or account number") from exc
     await db.refresh(row)
     return await _to_out(db, row, perms)
 
@@ -206,9 +231,9 @@ async def update_bank_account(
     row.updated_by = current_user.id
     try:
         await db.commit()
-    except IntegrityError as exc:
+    except DBAPIError as exc:
         await db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Duplicate nickname or account number") from exc
+        raise _as_client_error(exc, "Duplicate nickname or account number") from exc
     await db.refresh(row)
     return await _to_out(db, row, perms)
 
@@ -223,6 +248,15 @@ async def set_default(
     target = await db.get(BankAccount, account_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not target.is_active:
+        # The mirror image of `deactivate`'s is_default guard below. The DB
+        # trigger (trg_bank_accounts_reject_deactivate_default) only fires on
+        # OLD.is_default=1 AND NEW.is_default=1 AND NEW.is_active=0, so it
+        # cannot see this direction — an already-inactive row being flipped to
+        # default — and the same forbidden default+inactive state slips
+        # through. It also produces a default that /options (active-only)
+        # never returns, so no downstream picker could resolve it.
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Activate this account before making it the default")
     # Unset the old default BEFORE setting the new one — two sequential
     # UPDATEs in one transaction, in this order, so the database's
     # one-default guard (a generated-column UNIQUE, not a deferred
@@ -262,6 +296,30 @@ async def deactivate(
     return await _to_out(db, row, perms)
 
 
+@router.post("/{account_id}/activate", response_model=None)
+async def activate(
+    account_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(SCREEN, action="delete")),
+) -> dict:
+    """The reverse of `deactivate`, and the reason set-default can now refuse
+    an inactive account without stranding it: BankAccountUpdate deliberately
+    excludes is_active, so before this route existed a deactivated account had
+    no path back to Active through the API at all. Same shape and same
+    permission action as its deactivate counterpart, matching the
+    deactivate/activate pairs in masters_tax_schemes.py and vendors.py.
+    """
+    row = await db.get(BankAccount, account_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    row.is_active = True
+    row.updated_by = current_user.id
+    await db.commit()
+    await db.refresh(row)
+    return await _to_out(db, row, perms)
+
+
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_bank_account(
     account_id: str,
@@ -275,6 +333,6 @@ async def delete_bank_account(
     await db.delete(row)
     try:
         await db.commit()
-    except IntegrityError as exc:
+    except DBAPIError as exc:
         await db.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="Still referenced elsewhere — deactivate instead") from exc
+        raise _as_client_error(exc, "Still referenced elsewhere — deactivate instead") from exc

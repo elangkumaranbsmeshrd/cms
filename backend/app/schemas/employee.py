@@ -5,14 +5,35 @@ Declarations, Announcements. Attendance schemas live in schemas/leave.py
 alongside Leave since attendance_engine.py is shared by both.
 """
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+# The employee's email IS their login identity — create-login copies it
+# verbatim into users.email and every temporary-password / welcome mail is
+# dispatched to it, so an HR typo produces a permanently unreachable account
+# whose password can never be delivered. Validated here (the write side)
+# rather than with pydantic's EmailStr because email-validator is not a
+# dependency of this project; same "compiled pattern + field_validator"
+# idiom customer.py already uses for GSTIN/PAN.
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+# employee_emergency_contacts' own CHECK constraints, mirrored into the
+# contract so the OpenAPI schema actually documents what the DB will accept
+# (ck_eec_relationship / ck_eec_phone / ck_eec_name).
+EMERGENCY_CONTACT_RELATIONSHIPS = ("SPOUSE", "PARENT", "SIBLING", "FRIEND", "OTHER")
+INDIAN_MOBILE_PATTERN = re.compile(r"^[6-9][0-9]{9}$")
 
 
 # ================================================================ EMPLOYEE
-class EmployeeWrite(BaseModel):
+class _EmployeeFields(BaseModel):
+    """Shared field list. The write side (EmployeeWrite) adds the validators;
+    the read side (EmployeeOut) deliberately does NOT inherit them, so a row
+    persisted before those rules existed still reads back instead of turning
+    every GET into a 500."""
+
     first_name: str
     last_name: str | None = None
     email: str
@@ -34,7 +55,24 @@ class EmployeeWrite(BaseModel):
     photo_file_id: str | None = None
 
 
-class EmployeeOut(EmployeeWrite):
+class EmployeeWrite(_EmployeeFields):
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v: str) -> str:
+        v = v.strip()
+        if not EMAIL_PATTERN.match(v):
+            raise ValueError("Enter a valid email address, e.g. name@example.com")
+        return v
+
+    @field_validator("first_name")
+    @classmethod
+    def _validate_first_name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("First Name is required")
+        return v.strip()
+
+
+class EmployeeOut(_EmployeeFields):
     id: str
     employee_code: str
     employment_status: str
@@ -48,7 +86,7 @@ class EmployeeOut(EmployeeWrite):
     model_config = ConfigDict(from_attributes=True)
 
 
-class EmergencyContactWrite(BaseModel):
+class _EmergencyContactFields(BaseModel):
     contact_name: str
     relationship: str | None = None
     contact_phone: str | None = None
@@ -56,7 +94,33 @@ class EmergencyContactWrite(BaseModel):
     display_order: int = 1
 
 
-class EmergencyContactOut(EmergencyContactWrite):
+class EmergencyContactWrite(_EmergencyContactFields):
+    # Typed against the table's own CHECK constraints so a bad value is a
+    # 422 naming the offending field, not the misleading catch-all 409
+    # ("Only one contact may be marked Primary") every DBAPIError on this
+    # table used to collapse into. Declaring `relationship` as a Literal also
+    # publishes the accepted values in the OpenAPI contract, which a plain
+    # `str | None` never did.
+    relationship: Literal[EMERGENCY_CONTACT_RELATIONSHIPS] | None = None  # type: ignore[valid-type]
+
+    @field_validator("contact_name")
+    @classmethod
+    def _validate_contact_name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Contact Name is required")
+        return v.strip()
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _validate_contact_phone(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not INDIAN_MOBILE_PATTERN.match(v):
+                raise ValueError("Contact Phone must be a 10-digit mobile number starting with 6, 7, 8 or 9")
+        return v
+
+
+class EmergencyContactOut(_EmergencyContactFields):
     id: str
     employee_id: str
     model_config = ConfigDict(from_attributes=True)
@@ -263,7 +327,12 @@ class InsuranceEnrollmentOut(BaseModel):
 
 # ================================================================ DOCUMENTS
 class DocumentUpload(BaseModel):
-    document_type: str
+    # employee_documents.ck_ed_type, mirrored into the contract for the same
+    # reason EMERGENCY_CONTACT_RELATIONSHIPS is: as a bare `str` the OpenAPI
+    # spec advertised "any string" while the DB accepted exactly five values,
+    # so a client had no way to know what was legal and a wrong one only
+    # surfaced as a generic constraint 409 from the router.
+    document_type: Literal["ID_PROOF", "EDUCATIONAL_CERTIFICATE", "RESUME", "OFFER_LETTER_COPY", "OTHER"]
     file_id: str
     note: str | None = None
 
@@ -532,9 +601,27 @@ class TaxDeclarationVerifyLineDecision(BaseModel):
 class AnnouncementCreate(BaseModel):
     title: str
     message: str
-    target_scope: str  # ALL_EMPLOYEES | DEPARTMENT
+    # ck_ann_scope allows exactly these two — a Literal so the OpenAPI
+    # contract says so and a wrong value is a 422 naming the field, instead
+    # of the CHECK rejection escaping as a 500.
+    target_scope: Literal["ALL_EMPLOYEES", "DEPARTMENT"]
     department_ids: list[str] = []
     expiry_date: date | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _validate_title(cls, v: str) -> str:
+        # ck_ann_title: non-blank.
+        if not v.strip():
+            raise ValueError("Title is required")
+        return v.strip()
+
+    @field_validator("message")
+    @classmethod
+    def _validate_message(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Message is required")
+        return v.strip()
 
 
 class AnnouncementOut(BaseModel):

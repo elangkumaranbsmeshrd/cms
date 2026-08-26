@@ -1,0 +1,72 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/timesheets/me",
+    "severity": "WRONG",
+    "status_observed": "200 application/json, body `[]` -- when `format=pdf` was requested and a PDF file was expected",
+    "what_is_wrong": "The `format=pdf|excel` export branch is unreachable for any login that has no linked Employee record. The handler returns the bare JSON list `[]` at an early return before the `if format:` export block is evaluated, so the caller receives 200 application/json instead of the PDF/XLSX attachment the contract promises. Every other export-capable endpoint in the module honours `format` unconditionally, so a client that requests an export and branches on content-type (or triggers a file download) silently gets JSON from this one endpoint only.",
+    "evidence": "Controlled comparison, same endpoint, same query, two different logins:\n\n(a) As employee@meshrd.in (HAS a linked Employee record, 4 timesheet rows):\n    Request:  GET http://127.0.0.1:8001/api/v1/timesheets/me?format=pdf\n    Response: HTTP 200\n              content-type:        application/pdf\n              content-disposition: attachment; filename=\"My_Timesheet.pdf\"\n              2634 bytes, body starts b'%PDF-1.4\\n%\\x93\\x8c\\x8b\\x9e ReportLab Generated PDF document (opensource)'\n    GET .../timesheets/me?format=excel -> 200, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, filename=\"My_Timesheet.xlsx\", 5232 bytes, b'PK\\x03\\x04'\n\n(b) As superadmin@meshrd.in (NO linked Employee record -- users.id 8ea8f1e1-7439-49f1-8bd4-027e7f005c14 has no employees row with that user_id):\n    Request:  GET http://127.0.0.1:8001/api/v1/timesheets/me?format=pdf\n    Response: HTTP 200\n              content-type:        application/json\n              content-disposition: (absent)\n              2 bytes, body `[]`\n    GET .../timesheets/me?format=excel -> 200, application/json, 2 bytes, `[]`   (identical -- format ignored entirely)",
+    "suspected_cause": "app/api/v1/projects.py:1214-1216 -- `own_id = await org_scope.get_own_employee_id(db, current_user)` / `if own_id is None: return []`. This early return precedes the `if format:` export branch at app/api/v1/projects.py:1228, so the export path is skipped instead of exporting an empty result set.",
+    "group": "project"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/rbac/matrix/{role_code}",
+    "severity": "BROKEN",
+    "status_observed": "500 {\"detail\":\"Internal server error\"}",
+    "what_is_wrong": "`mode` (L1) and the values in `fields` (L3) are written straight to the database with no validation against the allowed enum. An out-of-range value violates the MySQL CHECK constraint (ck_role_perm_mode / ck_rpf_mode) and surfaces as an unhandled 500. Note the same handler DOES validate screen_key properly (422), so this is an inconsistent gap rather than a deliberate choice. The transaction rolls back atomically, so no data corruption results \u00e2\u20ac\u201d but a user-supplied value should not produce a 500.",
+    "evidence": "PUT /api/v1/rbac/matrix/ACCOUNTANT  body {\"changes\":[{\"screen_key\":\"asset.reclaim\",\"mode\":\"bogus_mode\"}]}\n -> 500 {\"detail\":\"Internal server error\"}\n\nPUT /api/v1/rbac/matrix/ACCOUNTANT  body {\"changes\":[{\"screen_key\":\"asset.directory\",\"fields\":{\"purchase_value\":\"bogus\"}}]}\n -> 500 {\"detail\":\"Internal server error\"}\n\ncontrol (same handler validates screen_key correctly):\nPUT /api/v1/rbac/matrix/ACCOUNTANT  body {\"changes\":[{\"screen_key\":\"no.such.screen\",\"mode\":\"full\"}]}\n -> 422 {\"detail\":\"Unknown screen 'no.such.screen'\"}\n\nrollback verified \u00e2\u20ac\u201d batch {\"changes\":[{\"screen_key\":\"asset.directory\",\"mode\":\"view\"},{\"screen_key\":\"asset.reclaim\",\"mode\":\"bogus_mode\"}]} -> 500, and a follow-up GET /rbac/matrix/ACCOUNTANT still shows asset.directory mode \"full\" (unchanged).",
+    "suspected_cause": "app/api/v1/rbac_admin.py:219 (`row.mode = change.mode`) and :256-262 (field mode) have no membership check; the constraint is only in alembic/versions/0001_platform_core.py:248 (ck_role_perm_mode) and :290 (ck_rpf_mode).",
+    "group": "platform"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/rbac/overrides",
+    "severity": "WRONG",
+    "status_observed": "201 with override_value stored verbatim as \"bogus_value\"; the value then appears as the effective screen mode in GET /api/v1/me",
+    "what_is_wrong": "`override_value` is never validated \u00e2\u20ac\u201d not by the API and not by the DB (VARCHAR(20), no CHECK constraint, unlike layer which has ck_upo_layer). An L1/L4 override_value is assigned directly to the effective permission mode by the resolver, so a typo'd or junk value becomes the user's screen mode. Because every downstream visibility test is `mode != \"none\"`, a junk value silently makes an otherwise-hidden screen VISIBLE. This is a security-relevant fail-open, not just cosmetic.",
+    "evidence": "POST /api/v1/rbac/overrides\n body {\"user_id\":\"8ea8f1e1-7439-49f1-8bd4-027e7f005c14\",\"screen_key\":\"asset.reclaim\",\"layer\":\"L1\",\"override_value\":\"bogus_value\",\"reason\":\"proof of unvalidated override_value\"}\n -> 201 {\"id\":\"fe104102-c424-49f9-a0b6-444289f18c04\", ... \"override_value\":\"bogus_value\" ...}\n\nGET /api/v1/me -> 200, policy.screens[\"asset.reclaim\"] = {\"label\":\"Reclaim on Exit\",\"module\":\"asset\",\"mode\":\"bogus_value\",\"actions\":[\"mark_returned\"],\"fields\":{}}\n\nDELETE /api/v1/rbac/overrides/fe104102-c424-49f9-a0b6-444289f18c04 -> 204\nGET /api/v1/me -> policy.screens[\"asset.reclaim\"].mode back to \"full\"\n\n(contrast: the same handler validates user_id -> 404, screen_key -> 404, layer -> 422 \"Layer must be one of L1, L2, L3, L4\", action_key -> 422, field_key -> 422, blank reason -> 422)",
+    "suspected_cause": "app/api/v1/rbac_admin.py:398-401 stores body.override_value with no allowlist check; app/rbac/resolver.py:215 and :224 then do `mode = ov.override_value` unconditionally. DB column has no CHECK (alembic/versions/0001_platform_core.py:322).",
+    "group": "platform"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/rbac/matrix/{role_code}",
+    "severity": "WRONG",
+    "status_observed": "200 OK \u00e2\u20ac\u201d the bogus key is written to role_permission_actions / role_permission_fields and logged to the change log",
+    "what_is_wrong": "Unknown `action_key` values in `actions` and unknown `field_key` values in `fields` are silently accepted and persisted as new permission rows, plus a PermissionChangeLog entry. An unknown `screen_key` in the same request body is correctly rejected with 422, so this is an inconsistent validation gap. The junk rows are invisible in GET /rbac/matrix (which builds its action/field list from the screen registry, not from the stored rows), so an operator typo silently creates unreachable, un-auditable permission rows that no UI can ever see or remove.",
+    "evidence": "PUT /api/v1/rbac/matrix/ACCOUNTANT body {\"changes\":[{\"screen_key\":\"asset.reclaim\",\"actions\":{\"no_such_action\":true}}]}\n -> 200 (no error)\nGET /api/v1/rbac/change-log?target_role_code=ACCOUNTANT&screen_key=asset.reclaim ->\n {\"layer\":\"L2\",\"before_value\":{\"allowed\":false,\"action_key\":\"no_such_action\"},\"after_value\":{\"allowed\":true,\"action_key\":\"no_such_action\"}}\n\nPUT /api/v1/rbac/matrix/ACCOUNTANT body {\"changes\":[{\"screen_key\":\"asset.reclaim\",\"fields\":{\"totally_fake_field\":\"hide\"}}]}\n -> 200 (no error)\nGET /api/v1/rbac/change-log?target_role_code=ACCOUNTANT&screen_key=asset.reclaim&layer=L3 ->\n {\"layer\":\"L3\",\"before_value\":{\"mode\":\"show\",\"field_key\":\"totally_fake_field\"},\"after_value\":{\"mode\":\"hide\",\"field_key\":\"totally_fake_field\"}}\n\nA subsequent GET /api/v1/rbac/matrix/ACCOUNTANT shows asset.reclaim with only its one real action (mark_returned) and no fields \u00e2\u20ac\u201d the junk rows are invisible.",
+    "suspected_cause": "app/api/v1/rbac_admin.py:238-249 (actions loop) and :256-267 (fields loop) never check the key against ScreenAction / ScreenSensitiveField for that screen, unlike the screen_key check at :196-198 and unlike POST /rbac/overrides which DOES validate both (rbac_admin.py:386-393).",
+    "group": "platform"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/search",
+    "severity": "WRONG",
+    "status_observed": "200 [] for a customer code that exists and is returned as the sublabel of that very customer",
+    "what_is_wrong": "Global search matches the record code/number for Employee (employee_code), Invoice (invoice_number), Ticket (ticket_number) and Purchase Bill (purchase_bill_code), but for Customer it matches only company_name \u00e2\u20ac\u201d customer_code is not searched, even though the endpoint returns customer_code as the result sublabel and its own docstring says it searches \"by name/number\". Typing a customer code into the topbar quick-search returns nothing.",
+    "evidence": "GET /api/v1/search?q=Zenith%20Corp%20216901 -> 200 [{\"type\":\"Customer\",\"id\":\"17724804-b81f-426f-8b6d-25fa913770d5\",\"label\":\"Zenith Corp 216901\",\"sublabel\":\"CUST-2028-0025\"}]\nGET /api/v1/search?q=CUST-2028-0004 -> 200 []\nGET /api/v1/search?q=CUST-2028 -> 200 []\n\ncontrast, same call shape on every other entity:\nGET /api/v1/search?q=EMP-2028 -> 200 [5 Employee hits]\nGET /api/v1/search?q=INV-2028 -> 200 [5 Invoice hits]\nGET /api/v1/search?q=TKT -> 200 [Ticket hits]\nGET /api/v1/search?q=PB- -> 200 [Purchase Bill hits]",
+    "suspected_cause": "app/api/v1/search.py:71 \u00e2\u20ac\u201d `.where(Customer.company_name.ilike(like))` with no `or_(... Customer.customer_code.ilike(like))`, while lines 59, 86, 96 and 106 all use or_() with the code column.",
+    "group": "platform"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/notifications",
+    "severity": "STUB",
+    "status_observed": "200, every notification row has \"deep_link_path\": null",
+    "what_is_wrong": "`deep_link_path` is part of the notification response contract (it is the field a client would use to make a notification clickable) but nothing in the application ever sets it. The notify() service accepts the parameter, and a grep of every caller across app/api/v1 shows not one of the 11 call sites passes it. All 14 live notification rows have it null. It is an unimplemented field presented as a real one.",
+    "evidence": "GET /api/v1/notifications?limit=200 -> 200, 14 rows, e.g.\n {\"id\":\"f1a5798d-3a20-435e-9efe-0fc87453e15c\",\"notification_type\":\"CREDIT_NOTE\",\"title\":\"Credit Note approved\",\"body\":\"CN-2028-0013 for Acme Corp 819891 has been approved.\",\"source_module\":\"invoice\",\"source_record_id\":\"cc1bd725-0ae0-4ccb-bdb4-d049877d317e\",\"deep_link_path\":null,\"is_read\":false,\"read_at\":null}\nAll 14 rows: deep_link_path == null.\n\nSource confirmation: `grep -rn \"deep_link_path\" app` returns only the model (app/models/employee.py:262), the schema (app/schemas/notifications.py:14), and the service signature/insert (app/services/notify.py:27,34). Zero callers supply it.",
+    "suspected_cause": "app/services/notify.py:27 \u00e2\u20ac\u201d `deep_link_path: str | None = None` is never passed by any of the 11 importing routers (assets, compensatory_hours, credit_notes, employees, employee_documents, employee_lifecycle, expenses, leave_requests, payroll_runs, payslips, tickets).",
+    "group": "platform"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/rbac/toggles",
+    "severity": "SUSPECT",
+    "status_observed": "200, numeric_value persisted as \"-5.00\"",
+    "what_is_wrong": "`numeric_value` is accepted and stored with no range validation. A negative value was accepted for the toggle \"Set an Auto-Approval Threshold\" (an expense auto-approval money amount), where a negative threshold is not a meaningful configuration. What I could NOT prove in this pass: what the expense-approval code actually does with a negative threshold \u00e2\u20ac\u201d whether it auto-approves everything, nothing, or errors. That is in the expenses module, outside my assigned scope, so I did not exercise it. Reported as SUSPECT rather than WRONG for that reason.",
+    "evidence": "PUT /api/v1/rbac/toggles body {\"changes\":[{\"toggle_key\":\"Set an Auto-Approval Threshold\",\"enabled\":false,\"numeric_value\":-5}]}\n -> 200\nGET /api/v1/rbac/toggles -> {\"toggle_key\":\"Set an Auto-Approval Threshold\",\"module_key\":\"expense\",\"label\":\"Set an Auto-Approval Threshold\",\"enabled\":false,\"default_enabled\":false,\"numeric_value\":\"-5.00\"}\n\n(restored: PUT with numeric_value \"500.00\" -> 200, GET confirms \"500.00\")\n\ncontrol \u00e2\u20ac\u201d the same handler DOES validate the key:\nPUT /api/v1/rbac/toggles body {\"changes\":[{\"toggle_key\":\"No Such Toggle At All\",\"enabled\":true}]} -> 422 {\"detail\":\"Unknown toggle 'No Such Toggle At All'\"}",
+    "suspected_cause": "",
+    "group": "platform"
+  }
+]

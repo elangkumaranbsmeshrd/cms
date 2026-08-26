@@ -6,12 +6,13 @@ fifteen files repeating the same list/add/edit/delete/deactivate pattern.
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Annotated
 
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.masters_lookup import build_lookup_router
@@ -48,10 +49,20 @@ from app.models.asset import Asset
 from app.models.compliance import Remittance
 from app.models.customer import Customer
 from app.models.employee import Employee
-from app.models.finance import CompanyExpense, ExpenseReimbursement, Invoice, InvoicePayment, PurchaseBillPayment
+from app.models.finance import (
+    CompanyExpense,
+    ExpenseClaim,
+    ExpenseReimbursement,
+    Invoice,
+    InvoiceLineItem,
+    InvoicePayment,
+    PurchaseBillLineItem,
+    PurchaseBillPayment,
+)
+from app.models.leave import LeaveBalance, LeaveBalanceAdjustment, LeaveCarryForwardLine, LeaveRequest
 from app.models.payroll import Payslip
 from app.models.ticket import Ticket
-from app.models.employee import AnnouncementTarget
+from app.models.employee import AnnouncementTarget, AttendanceRecord, EmployeeInsuranceEnrollment
 
 combined_router = APIRouter()
 
@@ -87,6 +98,12 @@ combined_router.include_router(
             "usage_count": (int, 0),
         },
         before_write=_expense_type_before_write,
+        # §3.0's Used/Unused filter: the param was declared on every generated
+        # list route but only APPLIED where `referenced_by` was passed, so this
+        # sub-master accepted `?is_referenced=true|false` with a 200 and
+        # returned the identical full row set either way. These are the real FK
+        # consumers (exhaustive grep of app/models for `expense_type_id`).
+        referenced_by=[(ExpenseClaim, "expense_type_id"), (CompanyExpense, "expense_type_id")],
         create_only_fields={"is_active": (bool, True)},
     )
 )
@@ -103,6 +120,12 @@ combined_router.include_router(
             "max_carry_forward_days": (Decimal | None, None),
             "is_quota_tracked": (bool, True),
         },
+        # Used/Unused filter — same gap as Expense Types above. Every table in
+        # app/models carrying a `leave_type_id`.
+        referenced_by=[
+            (LeaveRequest, "leave_type_id"), (LeaveBalance, "leave_type_id"),
+            (LeaveCarryForwardLine, "leave_type_id"), (LeaveBalanceAdjustment, "leave_type_id"),
+        ],
         create_only_fields={"is_active": (bool, True)},
     )
 )
@@ -116,6 +139,9 @@ _holidays_router = build_lookup_router(
         "holiday_type": (str, ...),  # MANDATORY | OPTIONAL
         "recurring_every_year": (bool, False),
     },
+    # Used/Unused filter — an attendance record stamped against a holiday is
+    # the one FK pointing at this table (app/models/employee.py AttendanceRecord).
+    referenced_by=[(AttendanceRecord, "holiday_id")],
     create_only_fields={"is_active": (bool, True)},
 )
 
@@ -273,6 +299,9 @@ combined_router.include_router(
         },
         search_field="code",
         before_write=_hsn_sac_before_write,
+        # Used/Unused filter — invoice and purchase-bill line items are what
+        # actually consume an HSN/SAC code (both spell the FK `hsn_code_id`).
+        referenced_by=[(InvoiceLineItem, "hsn_code_id"), (PurchaseBillLineItem, "hsn_code_id")],
         create_only_fields={"is_active": (bool, True)},
         label_field="code",
     )
@@ -342,7 +371,13 @@ combined_router.include_router(
         prefix="/masters/asset-categories", tag="masters", screen_key="masters.asset_categories", model=AssetCategory,
         fields={
             "name": (str, ...), "code": (str | None, None), "description": (str | None, None),
-            "default_useful_life_years": (int | None, None),
+            # gt=0, matching AssetSchema's own `useful_life_years` validator
+            # ("Useful Life must be a positive number", app/schemas/asset.py):
+            # this is the DEFAULT copied onto an asset in that column, and the
+            # straight-line engine divides by it, so a negative (or zero) value
+            # is either nonsense depreciation or a ZeroDivisionError downstream.
+            # A -3 was accepted with a 201 before this constraint existed.
+            "default_useful_life_years": (Annotated[int, Field(gt=0)] | None, None),
         },
         search_field=["name", "code"],
         referenced_by=[(Asset, "category_id")],
@@ -372,6 +407,9 @@ combined_router.include_router(
             "employee_contribution_monthly": (Decimal, Decimal(0)),
         },
         search_field="plan_name",
+        # Used/Unused filter — an employee enrolled on the plan is what makes
+        # it "used" (app/models/employee.py EmployeeInsuranceEnrollment).
+        referenced_by=[(EmployeeInsuranceEnrollment, "insurance_plan_id")],
         create_only_fields={"is_active": (bool, True)},
     )
 )

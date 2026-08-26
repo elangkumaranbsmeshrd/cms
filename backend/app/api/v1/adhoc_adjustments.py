@@ -73,7 +73,18 @@ async def list_adhoc_adjustments(
 ) -> list[AdhocAdjustmentOut] | Response:
     stmt = select(AdhocPayslipAdjustment)
     if employee_id:
-        stmt = stmt.where(AdhocPayslipAdjustment.employee_id == employee_id)
+        # AdhocPayslipAdjustment.employee_id is populated ONLY for
+        # applies_to_mode=SINGLE_EMPLOYEE (ck_adhoc_employee_pairing forces it
+        # NULL for the other two modes) — filtering on that column alone
+        # silently dropped every MULTIPLE_EMPLOYEES / ALL_ACTIVE_EMPLOYEES
+        # adjustment that genuinely charges this person, even though
+        # payroll_runs._calculate_employee reaches them through
+        # adhoc_adjustment_employees and really does apply them to the
+        # payslip. "Everything hitting this employee's payslip" therefore has
+        # to be the union of the two: the own-column match plus the per-
+        # employee target rows.
+        targeted_here = select(AdhocAdjustmentEmployee.adhoc_payslip_adjustment_id).where(AdhocAdjustmentEmployee.employee_id == employee_id)
+        stmt = stmt.where((AdhocPayslipAdjustment.employee_id == employee_id) | AdhocPayslipAdjustment.id.in_(targeted_here))
     if adjustment_type:
         stmt = stmt.where(AdhocPayslipAdjustment.adjustment_type == adjustment_type)
     if is_taxable is not None:
@@ -152,19 +163,25 @@ async def create_adhoc_adjustment(
         is_recurring=body.is_recurring, applies_to_component=body.applies_to_component, note=body.note,
         effective_from=body.effective_from or date.today(), created_by=current_user.id, updated_by=current_user.id,
     )
-    db.add(row)
-    await db.flush()
-
-    target_ids = await _resolve_targets(db, body.applies_to_mode, body.employee_id, body.employee_ids)
-    for emp_id in target_ids:
-        db.add(AdhocAdjustmentEmployee(id=str(uuid.uuid4()), adhoc_payslip_adjustment_id=row.id, employee_id=emp_id, created_by=current_user.id, updated_by=current_user.id))
-    row.target_employee_count = len(target_ids)
-
+    # The whole write — not just the commit — sits inside the try. The parent
+    # row is INSERTed by the flush below (and would be autoflushed anyway by
+    # _resolve_targets' own SELECT), so every constraint MySQL enforces on the
+    # adjustment row itself (a non-existent employee_id FK, an over-length
+    # label, ck_adhoc_*) used to raise OUTSIDE the handler that exists to turn
+    # exactly those rejections into a client error, and escaped as a 500.
     try:
+        db.add(row)
+        await db.flush()
+
+        target_ids = await _resolve_targets(db, body.applies_to_mode, body.employee_id, body.employee_ids)
+        for emp_id in target_ids:
+            db.add(AdhocAdjustmentEmployee(id=str(uuid.uuid4()), adhoc_payslip_adjustment_id=row.id, employee_id=emp_id, created_by=current_user.id, updated_by=current_user.id))
+        row.target_employee_count = len(target_ids)
+
         await db.commit()
     except DBAPIError as exc:
         await db.rollback()
-        raise _as_client_error(exc, "Rejected by a database constraint") from exc
+        raise _as_client_error(exc, "Rejected by a database constraint — check that every employee id refers to an existing Employee") from exc
     await db.refresh(row)
     return row
 

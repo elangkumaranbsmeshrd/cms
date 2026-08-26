@@ -26,7 +26,7 @@ from app.core.db import get_db
 from app.core.serialization.masking import apply_field_masking
 from app.models.customer import Customer, CustomerActivity, CustomerContact, CustomerFile
 from app.models.masters import CustomerStatus
-from app.models.opportunity import Opportunity
+from app.models.opportunity import Opportunity, OpportunityActivity
 from app.models.platform import StoredFile, User
 from app.models.project import Project, ProjectMember
 from app.models.rbac import FeatureToggle, Role
@@ -473,8 +473,29 @@ async def delete_contact(
     row = await db.get(CustomerContact, contact_id)
     if row is None or row.customer_id != customer_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    await db.delete(row)
-    await db.commit()
+    # Both CustomerActivity.related_contact_id and
+    # OpportunityActivity.related_contact_id hold this row under ON DELETE
+    # RESTRICT, and activities are append-only (see add_activity's own rollup
+    # comment) — so a contact someone has already logged a call/meeting
+    # against can no longer be deleted without destroying the record of who
+    # that activity was with. Same shape as vendors.py's delete_vendor
+    # usage-history guard: an app-level check that produces an actionable
+    # 409 rather than letting the FK rejection escape as a 500, with the
+    # DBAPIError catch below as the second line of defence for any reference
+    # this check doesn't know about.
+    for referencing in (CustomerActivity, OpportunityActivity):
+        hit = (await db.execute(select(referencing.id).where(referencing.related_contact_id == contact_id).limit(1))).first()
+        if hit is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail="This contact is linked to logged activities — it can no longer be deleted",
+            )
+    try:
+        await db.delete(row)
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "This contact is referenced by other records — it can no longer be deleted") from exc
 
 
 # =============================================================== ACTIVITIES

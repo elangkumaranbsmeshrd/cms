@@ -37,6 +37,7 @@ sub-actions (view-only throughout, same as the existing Monthly Summary tab).
 import calendar
 from datetime import date as date_type, timedelta
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
@@ -52,6 +53,7 @@ from app.models.platform import User
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
 from app.rbac.scope import apply_scope
+from app.schemas.payroll import PERIOD_MONTH_MAX, PERIOD_MONTH_MIN, PERIOD_YEAR_MAX, PERIOD_YEAR_MIN
 from app.services import list_export, org_scope
 from app.services.attendance_engine import SaturdayOverrideSnapshot, WorkWeekPolicySnapshot, resolve_day, resolve_hours
 from app.services.hour_reconciliation import reconcile_employee_period
@@ -122,6 +124,18 @@ _COMPENSATION_COLUMNS = [
 _STATUS_DISPLAY = {"MET": "Met", "SHORT_COMPENSABLE": "Short — compensable", "SHORT_PAYROLL_IMPACT": "Short — payroll impact"}
 
 
+# Every endpoint below feeds period_month/period_year straight into
+# payroll_engine.resolve_pay_period, which builds real date() objects from
+# them: an out-of-range month raised "ValueError: month must be in 1..12"
+# deep inside that call and surfaced as a 500 on all four tabs. Declared with
+# the same bounds the DB itself enforces (ck_prun_month / ck_prun_year), so
+# FastAPI answers a plain 422 naming the field before any date arithmetic —
+# and the range is now visible in the OpenAPI schema, which previously
+# advertised a bare required integer.
+PeriodMonth = Annotated[int, Query(ge=PERIOD_MONTH_MIN, le=PERIOD_MONTH_MAX, description="Calendar month 1-12 of the pay period")]
+PeriodYear = Annotated[int, Query(ge=PERIOD_YEAR_MIN, le=PERIOD_YEAR_MAX, description="Calendar year of the pay period")]
+
+
 def _is_last_saturday(d: date_type) -> bool:
     last_day_of_month = calendar.monthrange(d.year, d.month)[1]
     return d.day + 7 > last_day_of_month
@@ -184,8 +198,8 @@ async def _scoped_employees(
 # ======================================================== MONTHLY SUMMARY
 @router.get("/monthly-summary", response_model=None)
 async def monthly_summary(
-    period_month: int,
-    period_year: int,
+    period_month: PeriodMonth,
+    period_year: PeriodYear,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN)),
@@ -264,8 +278,8 @@ async def monthly_summary(
 # ========================================================== DAY-WISE LOG
 @router.get("/day-wise-log", response_model=None)
 async def day_wise_log(
-    period_month: int,
-    period_year: int,
+    period_month: PeriodMonth,
+    period_year: PeriodYear,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -377,8 +391,8 @@ async def day_wise_log(
 # ======================================================== PAYROLL IMPACT
 @router.get("/payroll-impact", response_model=None)
 async def payroll_impact(
-    period_month: int,
-    period_year: int,
+    period_month: PeriodMonth,
+    period_year: PeriodYear,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN)),
@@ -456,20 +470,27 @@ async def payroll_impact(
             net_short_hours=net_short, net_hours_per_day=recon.policy.net_working_hours_per_day, gross_pay=gross_pay,
             total_days_in_period=total_days_in_period, rule=recon.policy.uncompensated_shortfall_becomes,
         )
+        # resolved_status, NOT hour_status: this is the status computed for
+        # THIS employee, and writing it into the `hour_status` parameter
+        # clobbered the caller's own filter argument — by the time the filter
+        # below ran it held whatever the LAST employee in the loop resolved
+        # to, so every hour_status value (including nonsense ones) returned
+        # the same arbitrary set. Same local-variable shape monthly_summary
+        # above already uses correctly.
         if net_short <= 0:
-            hour_status = "Met"
+            resolved_status = "Met"
             next_step = "No action needed — hours are Met."
         elif net_short <= recon.policy.net_working_hours_per_day:
-            hour_status = "Short — compensable"
+            resolved_status = "Short — compensable"
             next_step = f"{net_short} hour(s) short, within one day's net hours — clears if a pending compensatory request is approved before the next payroll run, else converts to Loss of Pay."
         else:
-            hour_status = "Short — payroll impact"
+            resolved_status = "Short — payroll impact"
             next_step = f"{shortfall.lop_days} day(s) convert to Loss of Pay (est. ₹{shortfall.lop_deduction}) at the next payroll run unless compensated first."
         rows.append({
             "employee_id": employee.id, "employee_code": employee.employee_code, "employee_name": _employee_name(employee),
             "hours_short": hours_short, "comp_pending_hours": recon.comp_pending_hours, "net_short_hours": net_short,
             "lop_days_net_of_pending": shortfall.lop_days, "estimated_deduction": shortfall.lop_deduction,
-            "status": hour_status, "next_step": next_step, "is_locked": False,
+            "status": resolved_status, "next_step": next_step, "is_locked": False,
         })
 
     if hour_status:
@@ -487,8 +508,8 @@ async def payroll_impact(
 # ========================================================== COMPENSATION
 @router.get("/compensation", response_model=None)
 async def compensation(
-    period_month: int,
-    period_year: int,
+    period_month: PeriodMonth,
+    period_year: PeriodYear,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN)),

@@ -586,6 +586,16 @@ async def list_credits(
     format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
 ) -> list[CreditRowOut] | Response:
     rows = await credits_engine.build_credit_rows(db)
+    # A VOIDED certificate is not this receipt's certificate any more:
+    # build_credit_rows already reverts the row to certificate_id=None /
+    # AWAITING_CERTIFICATE, but it still carries the voided reference, so the
+    # row read "Awaiting Certificate" while displaying a certificate number,
+    # and the documented search ("Matches ... Certificate Ref") still matched
+    # a voided number. Gate the reference on the same certificate_id the
+    # engine kept, so all three uses below — search, export, response — agree.
+    def _cert_ref(r) -> str | None:
+        return r.certificate_reference if r.certificate_id else None
+
     if status_filter:
         rows = [r for r in rows if r.status in status_filter]
     if customer_id:
@@ -598,7 +608,7 @@ async def list_credits(
         needle = search.lower()
         rows = [
             r for r in rows
-            if needle in r.invoice_number.lower() or needle in r.customer_name.lower() or needle in (r.certificate_reference or "").lower()
+            if needle in r.invoice_number.lower() or needle in r.customer_name.lower() or needle in (_cert_ref(r) or "").lower()
         ]
 
     if format:
@@ -606,7 +616,7 @@ async def list_credits(
             {
                 "invoice_number": r.invoice_number, "customer_name": r.customer_name, "payment_date": r.payment_date,
                 "invoice_total": r.invoice_total, "amount_received": r.amount_received, "withheld": r.withheld,
-                "certificate": "Yes" if r.certificate_id else "No", "certificate_reference": r.certificate_reference or "",
+                "certificate": "Yes" if r.certificate_id else "No", "certificate_reference": _cert_ref(r) or "",
                 "credit_claimed": "Yes" if r.credit_claimed else "No", "status": r.status,
             }
             for r in rows
@@ -619,7 +629,7 @@ async def list_credits(
             invoice_payment_id=r.invoice_payment_id, invoice_number=r.invoice_number, customer_id=r.customer_id,
             customer_name=r.customer_name, payment_date=r.payment_date, invoice_total=r.invoice_total,
             amount_received=r.amount_received, withheld=r.withheld, tax_head_id=r.tax_head_id, certificate_id=r.certificate_id,
-            certificate_reference=r.certificate_reference, credit_claimed=r.credit_claimed, status=r.status,
+            certificate_reference=_cert_ref(r), credit_claimed=r.credit_claimed, status=r.status,
         )
         for r in rows
     ]

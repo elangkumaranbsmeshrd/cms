@@ -17,6 +17,7 @@ from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.core.serialization.masking import apply_field_masking
 from app.models.finance import CompanyExpense, ExpenseClaim, ExpenseReimbursement, PurchaseBill, PurchaseBillPayment
+from app.models.masters import BankAccount, PaymentMode
 from app.models.platform import User
 from app.models.rbac import FeatureToggle
 from app.models.vendor import Vendor
@@ -360,6 +361,27 @@ async def delete_vendor(
         raise _as_client_error(exc, "Rejected by a database constraint") from exc
 
 
+async def _resolve_usage_labels(db: AsyncSession, rows: list[dict]) -> None:
+    """Replace the raw payment_mode_id / bank_account_id each Usage row
+    carries in `mode` / `paid_from` with the human-readable master label
+    (Payment Mode name, Bank Account nickname). Mutates `rows` in place; two
+    queries total, regardless of row count.
+    """
+    mode_ids = {r["mode"] for r in rows if r["mode"]}
+    bank_ids = {r["paid_from"] for r in rows if r["paid_from"]}
+    modes: dict[str, str] = {}
+    banks: dict[str, str] = {}
+    if mode_ids:
+        modes = {m.id: m.name for m in (await db.execute(select(PaymentMode).where(PaymentMode.id.in_(mode_ids)))).scalars().all()}
+    if bank_ids:
+        banks = {b.id: b.nickname for b in (await db.execute(select(BankAccount).where(BankAccount.id.in_(bank_ids)))).scalars().all()}
+    for r in rows:
+        if r["mode"]:
+            r["mode"] = modes.get(r["mode"], r["mode"])
+        if r["paid_from"]:
+            r["paid_from"] = banks.get(r["paid_from"], r["paid_from"])
+
+
 @router.get("/{vendor_id}/usage", response_model=None)
 async def vendor_usage(
     vendor_id: str,
@@ -447,6 +469,17 @@ async def vendor_usage(
         rows = [r for r in rows if needle in str(r["reference_number"]).lower()]
 
     rows.sort(key=lambda r: r["date"], reverse=True)
+    # Mode and Paid From are stored as master ids (§2.2/masters convention —
+    # never a hardcoded name), so they have to be resolved to the label the
+    # tab actually shows, exactly like the sibling paid_into/
+    # account_number_masked columns on the same row already are. Resolved
+    # AFTER the filter block above on purpose: `paid_from_account_id` filters
+    # on the raw bank_account_id, which is what the picker sends. Batched the
+    # same way compliance.py's _remittances_to_out resolves the identical
+    # pair, rather than a lookup per row. A row whose master id no longer
+    # resolves keeps the raw id rather than silently blanking — that is
+    # drifted data, not a display decision this endpoint gets to make.
+    await _resolve_usage_labels(db, rows)
     masked_rows = [apply_field_masking(row, perms) for row in rows]
 
     if format:

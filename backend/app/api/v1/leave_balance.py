@@ -281,6 +281,14 @@ async def preview_carry_forward(
     to_fy = await db.get(FinancialYear, body.to_financial_year_id)
     if from_fy is None or to_fy is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Financial Year not found")
+    # Mirrors the DB's own ck_lcfr_distinct_fy CHECK. Without this guard the
+    # constraint fires at the flush below — outside the try/except DBAPIError
+    # that wraps the commit — and escapes as a 500.
+    if from_fy.id == to_fy.id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Carry Forward must run between two different Financial Years — choose a To Financial Year other than the From Financial Year",
+        )
 
     run = LeaveCarryForwardRun(
         id=str(uuid.uuid4()), from_financial_year_id=from_fy.id, to_financial_year_id=to_fy.id,
@@ -288,7 +296,11 @@ async def preview_carry_forward(
         created_by=current_user.id, updated_by=current_user.id,
     )
     db.add(run)
-    await db.flush()
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
 
     balances = (
         await db.execute(select(LeaveBalance).where(LeaveBalance.financial_year_id == from_fy.id, LeaveBalance.carry_forward_allowed_snapshot.is_(True)))

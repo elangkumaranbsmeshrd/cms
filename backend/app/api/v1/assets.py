@@ -97,16 +97,81 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
 # "mask"-mode field (MASKED_PLACEHOLDER, a dict) always 500s against a
 # non-dict-typed field. This is the same class of bug as the sharp edge on
 # the way IN, just at the opposite end of the response.
-def _load_asset_out(asset: Asset, perms: PermissionSet) -> dict:
+def _load_asset_out(asset: Asset, perms: PermissionSet, fy_label: str | None = None) -> dict:
     out = AssetOut.model_validate(asset)
     current_value = asset_engine.calculate_current_value(
         asset.purchase_value, asset.useful_life_years, asset.purchase_date, date_type.today(), asset.depreciation_method,
     )
     out.current_value = current_value if current_value is not None else "Not available"
+    # §2.5: Current Value is computed live "as of today", so the financial
+    # year it is stated as of is simply the FY that contains today — the one
+    # Masters flags is_current. The slot used to be published on every
+    # response and populated by nothing, so a reader got a depreciated figure
+    # with no period attached. Left null when there is no figure to label
+    # (no Purchase Value -> "Not available") or when no FY is marked current.
+    if isinstance(current_value, Decimal):
+        out.value_as_of_fy_label = fy_label
     # §6.1/6.2: "Show Purchase Value to Manager" toggle OFF by default —
     # governs Purchase Value AND Current Value together (same Layer-3
     # masking pattern as Vendor/Customer in Phase 4).
     return apply_field_masking(out.model_dump(), perms)
+
+
+async def _current_fy_label(db: AsyncSession) -> str | None:
+    """The label of the FY that contains today, for value_as_of_fy_label.
+
+    Deliberately non-raising (unlike numbering.get_current_financial_year,
+    which 409s): a company that has not yet flagged a current FY must still
+    be able to READ its asset records — the label is simply omitted.
+    """
+    from app.models.numbering import FinancialYear
+
+    return (await db.execute(select(FinancialYear.label).where(FinancialYear.is_current.is_(True)))).scalars().first()
+
+
+async def _validate_asset_references(db: AsyncSession, body: AssetWrite, *, include_assignment: bool) -> None:
+    """Every foreign key the Details tab can set, checked before the write.
+
+    Without this the FK rejection surfaced as an unhandled 500 on create: the
+    row is written by db.flush() (and by the autoflush inside
+    exit_checklist_sync), both of which run before the commit that
+    _as_client_error guards, so the DBAPIError escaped the guard entirely.
+    Checking up front also names the offending field instead of returning a
+    generic "Rejected by a database constraint".
+    """
+    from app.models.employee import Employee
+    from app.models.masters import AssetCategory, CompanyAddress, Department
+    from app.models.vendor import Vendor
+
+    checks = [
+        (AssetCategory, body.category_id, "Category"),
+        (Vendor, body.vendor_id, "Vendor"),
+    ]
+    # update_asset drops Location/Department/Assigned To before writing (§6.1
+    # — they belong to the assign action, not this edit action), so they are
+    # only checked where they are actually persisted.
+    if include_assignment:
+        checks += [
+            (CompanyAddress, body.location_address_id, "Location"),
+            (Department, body.department_id, "Department"),
+            (Employee, body.assigned_to, "Assigned To"),
+        ]
+    for model, value, label in checks:
+        if value is not None and await db.get(model, value) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{label} does not exist")
+
+
+async def _assert_employee_exists(db: AsyncSession, employee_id: str) -> None:
+    """Assign/Transfer used to hand an unknown employee id straight to the
+    database. The FK rejection fired on the autoflush inside
+    exit_checklist_sync (which SELECTs Asset), i.e. before any commit, and
+    escaped as an unhandled 500 — the same class of miss as create_asset's.
+    Same up-front check attendance.record_attendance already does.
+    """
+    from app.models.employee import Employee
+
+    if await db.get(Employee, employee_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Employee not found")
 
 
 async def _get_employee_user(db: AsyncSession, employee_id: str) -> str | None:
@@ -226,7 +291,8 @@ async def list_assets(
         }
         return await list_export.build_export(format, db, current_user, "Assets", _ASSET_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [_load_asset_out(row, perms) for row in rows]
+    fy_label = await _current_fy_label(db)
+    return [_load_asset_out(row, perms, fy_label) for row in rows]
 
 
 @router.post("/assets", response_model=None, status_code=status.HTTP_201_CREATED)
@@ -237,6 +303,7 @@ async def create_asset(
     perms: PermissionSet = Depends(require_screen(DIRECTORY_SCREEN, action="edit")),
 ) -> dict:
     await _validate_asset_dates(db, body, existing_id=None)
+    await _validate_asset_references(db, body, include_assignment=True)
     fy = await get_current_financial_year(db)
     code = await allocate_number(db, "AST", fy.id, fy.label)
     data = body.model_dump()
@@ -246,20 +313,24 @@ async def create_asset(
         status="IN_USE" if assigned_to else "IN_STORE", assigned_to=assigned_to, **data,
     )
     db.add(row)
-    await db.flush()
-    if assigned_to is not None:
-        db.add(AssetAssignmentHistory(
-            id=str(uuid.uuid4()), asset_id=row.id, employee_id=assigned_to, from_date=date_type.today(),
-            action="ASSIGNED", performed_by=current_user.id,
-        ))
-        await exit_checklist_sync.sync_outstanding_assets(db, assigned_to, current_user.id)
+    # The flush (and the autoflush inside sync_outstanding_assets) has to sit
+    # INSIDE the guard: that is where the INSERT actually hits the database,
+    # so a constraint rejection there used to escape as an unhandled 500
+    # while the guard sat uselessly around the commit alone.
     try:
+        await db.flush()
+        if assigned_to is not None:
+            db.add(AssetAssignmentHistory(
+                id=str(uuid.uuid4()), asset_id=row.id, employee_id=assigned_to, from_date=date_type.today(),
+                action="ASSIGNED", performed_by=current_user.id,
+            ))
+            await exit_checklist_sync.sync_outstanding_assets(db, assigned_to, current_user.id)
         await db.commit()
     except DBAPIError as exc:
         await db.rollback()
         raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 async def _get_asset_scoped(db: AsyncSession, asset_id: str, perms: PermissionSet, current_user: User) -> Asset:
@@ -282,7 +353,7 @@ async def get_asset(
     perms: PermissionSet = Depends(require_screen(DIRECTORY_SCREEN)),
 ) -> dict:
     asset = await _get_asset_scoped(db, asset_id, perms, current_user)
-    return _load_asset_out(asset, perms)
+    return _load_asset_out(asset, perms, await _current_fy_label(db))
 
 
 @router.get("/assets/{asset_id}/pdf")
@@ -303,7 +374,7 @@ async def download_asset_pdf(
     from app.models.masters import AssetCategory
 
     asset = await _get_asset_scoped(db, asset_id, perms, current_user)
-    masked = _load_asset_out(asset, perms)
+    masked = _load_asset_out(asset, perms, await _current_fy_label(db))
     category = await db.get(AssetCategory, asset.category_id)
     assigned_employee = await db.get(Employee, asset.assigned_to) if asset.assigned_to else None
     assigned_name = f"{assigned_employee.first_name} {assigned_employee.last_name or ''}".strip() if assigned_employee else "Unassigned"
@@ -356,6 +427,7 @@ async def update_asset(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     await _validate_asset_dates(db, body, existing_id=asset_id)
+    await _validate_asset_references(db, body, include_assignment=False)
     data = body.model_dump()
     data.pop("assigned_to", None)
     data.pop("location_address_id", None)
@@ -369,7 +441,7 @@ async def update_asset(
         await db.rollback()
         raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 @router.put("/assets/{asset_id}/location", response_model=None)
@@ -388,7 +460,7 @@ async def relocate_asset(
     row.updated_by = current_user.id
     await db.commit()
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 @router.post("/assets/{asset_id}/retire", response_model=None)
@@ -413,7 +485,7 @@ async def retire_asset(
         await exit_checklist_sync.sync_outstanding_assets(db, previously_held_by, current_user.id)
     await db.commit()
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 # ================================================================ ATTACHMENTS
@@ -494,6 +566,7 @@ async def assign_asset(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if row.status != "IN_STORE":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Assign is only available when Status is In Store")
+    await _assert_employee_exists(db, body.employee_id)
     row.status = "IN_USE"
     row.assigned_to = body.employee_id
     row.updated_by = current_user.id
@@ -501,10 +574,14 @@ async def assign_asset(
         id=str(uuid.uuid4()), asset_id=asset_id, employee_id=body.employee_id, from_date=body.effective_date or date_type.today(),
         action="ASSIGNED", performed_by=current_user.id,
     ))
-    await exit_checklist_sync.sync_outstanding_assets(db, body.employee_id, current_user.id)
-    await db.commit()
+    try:
+        await exit_checklist_sync.sync_outstanding_assets(db, body.employee_id, current_user.id)
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 @router.post("/assets/{asset_id}/transfer", response_model=None)
@@ -520,6 +597,7 @@ async def transfer_asset(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if row.status != "IN_USE":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Transfer is only available when Status is In Use")
+    await _assert_employee_exists(db, body.employee_id)
     effective = body.effective_date or date_type.today()
     previous_employee = row.assigned_to
     for hist in (
@@ -532,16 +610,37 @@ async def transfer_asset(
         id=str(uuid.uuid4()), asset_id=asset_id, employee_id=body.employee_id, from_date=effective,
         action="TRANSFERRED", performed_by=current_user.id, reason=body.reason,
     ))
-    if previous_employee is not None:
-        await exit_checklist_sync.sync_outstanding_assets(db, previous_employee, current_user.id)
-    await exit_checklist_sync.sync_outstanding_assets(db, body.employee_id, current_user.id)
-    await db.commit()
+    try:
+        if previous_employee is not None:
+            await exit_checklist_sync.sync_outstanding_assets(db, previous_employee, current_user.id)
+        await exit_checklist_sync.sync_outstanding_assets(db, body.employee_id, current_user.id)
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 async def _unassign(db: AsyncSession, row: Asset, actor_user_id: str) -> None:
+    """§2.3: each action "adds one row to the Assignment History tab" — one,
+    not one per open row.
+
+    This used to create the new UNASSIGNED row INSIDE the loop that closes
+    the open ones, and to leave that new row's To Date null. Since nothing
+    ever closes an UNASSIGNED row, every cycle left one more permanently-open
+    row behind, and the next unassign then emitted one UNASSIGNED row per
+    open row — N assign/unassign cycles produced N*(N+1)/2 UNASSIGNED rows
+    instead of N, so the history read as several hand-backs for a single
+    hand-back. The stale open rows also matched the `to_date IS NULL` lookup
+    behind GET /employees/me/assets' assigned-date filter.
+
+    Now: close every open holding row, then add exactly one UNASSIGNED row
+    for the employee who actually held the asset, already closed — it records
+    the moment of return, not an ongoing holding, so it must never sit open.
+    """
     today = date_type.today()
+    held_by = row.assigned_to
     # Status/assigned_to must flip BEFORE the sync call below — it recounts
     # this employee's IN_USE assets, and this asset needs to already read as
     # no-longer-theirs for the count to be correct (was a real bug: the sync
@@ -549,16 +648,28 @@ async def _unassign(db: AsyncSession, row: Asset, actor_user_id: str) -> None:
     row.status = "IN_STORE"
     row.assigned_to = None
     row.updated_by = actor_user_id
+    affected: list[str] = []
     for hist in (
         await db.execute(select(AssetAssignmentHistory).where(AssetAssignmentHistory.asset_id == row.id, AssetAssignmentHistory.to_date.is_(None)))
     ).scalars():
         hist.to_date = today
-        previous_employee = hist.employee_id
+        if hist.employee_id not in affected:
+            affected.append(hist.employee_id)
+    # Falls back to the open history rows only when Assigned To is somehow
+    # already blank, so an inconsistent record still logs its hand-back.
+    returning = [held_by] if held_by is not None else affected
+    for employee_id in returning:
         db.add(AssetAssignmentHistory(
-            id=str(uuid.uuid4()), asset_id=row.id, employee_id=previous_employee, from_date=today,
+            id=str(uuid.uuid4()), asset_id=row.id, employee_id=employee_id, from_date=today, to_date=today,
             action="UNASSIGNED", performed_by=actor_user_id,
         ))
-        await exit_checklist_sync.sync_outstanding_assets(db, previous_employee, actor_user_id)
+    # Every employee whose holdings changed gets re-synced, including the one
+    # named on the asset even if no open history row mentioned them.
+    to_sync = list(affected)
+    if held_by is not None and held_by not in to_sync:
+        to_sync.append(held_by)
+    for employee_id in to_sync:
+        await exit_checklist_sync.sync_outstanding_assets(db, employee_id, actor_user_id)
 
 
 @router.post("/assets/{asset_id}/unassign", response_model=None)
@@ -576,7 +687,7 @@ async def unassign_asset(
     await _unassign(db, row, current_user.id)
     await db.commit()
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 @router.get("/assets/{asset_id}/assignment-history", response_model=list[AssetAssignmentHistoryOut])
@@ -636,8 +747,15 @@ async def add_maintenance(
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(MAINTENANCE_SCREEN, action="edit")),
 ) -> dict:
-    if await db.get(Asset, asset_id) is None:
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    # Retired/Disposed "has no further action after it" (Section 4) — Assign
+    # already 409s on it, but Maintenance had no guard at all, so a log with a
+    # future Next Due Date could be booked against a disposed asset and then
+    # showed up under "due soon" in the §2.7 report.
+    if asset.status == "RETIRED_DISPOSED":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This asset is Retired/Disposed — no further maintenance can be logged against it")
     row = AssetMaintenanceLog(id=str(uuid.uuid4()), asset_id=asset_id, created_by=current_user.id, updated_by=current_user.id, **body.model_dump())
     db.add(row)
     try:
@@ -1007,8 +1125,17 @@ async def asset_reports(
 
     # §2.7 "Warranty or maintenance due soon" — 30-day default window,
     # adjustable via due_soon_days.
+    # A Retired/Disposed asset is never work outstanding — it is already
+    # reported, by status, in this same response's retired_assets list, and
+    # "no further action after it" (Section 4) is the whole meaning of that
+    # status. Listing it under "due soon" double-counted it and overstated
+    # the upcoming workload. The user-facing filters above still apply to all
+    # three views identically; this is a status-of-record exclusion, not a
+    # filter, so switching view never changes the filtered set.
     due_soon = []
     for r in rows:
+        if r.status == "RETIRED_DISPOSED":
+            continue
         warranty_days = asset_engine.days_until(r.warranty_expiry, today)
         warranty_due = warranty_days is not None and 0 <= warranty_days <= due_soon_days
         next_due_dates = (
@@ -1087,7 +1214,8 @@ async def reclaim_list(
     perms: PermissionSet = Depends(require_screen(RECLAIM_SCREEN)),
 ) -> list[dict]:
     rows = (await db.execute(select(Asset).where(Asset.assigned_to == employee_id, Asset.status == "IN_USE"))).scalars().all()
-    return [_load_asset_out(row, perms) for row in rows]
+    fy_label = await _current_fy_label(db)
+    return [_load_asset_out(row, perms, fy_label) for row in rows]
 
 
 @router.post("/assets/{asset_id}/reclaim", response_model=None)
@@ -1119,7 +1247,7 @@ async def reclaim_mark_returned(
         await exit_checklist_sync.sync_outstanding_assets(db, held_by, current_user.id)
     await db.commit()
     await db.refresh(row)
-    return _load_asset_out(row, perms)
+    return _load_asset_out(row, perms, await _current_fy_label(db))
 
 
 # ============================================================= MY ASSETS
@@ -1154,7 +1282,8 @@ async def my_assets(
             if (assigned_date_from is None or from_date >= assigned_date_from) and (assigned_date_to is None or from_date <= assigned_date_to)
         }
         rows = [r for r in rows if r.id in eligible]
-    return [_load_asset_out(row, perms) for row in rows]
+    fy_label = await _current_fy_label(db)
+    return [_load_asset_out(row, perms, fy_label) for row in rows]
 
 
 @router.get("/employees/me/asset-requests", response_model=None)

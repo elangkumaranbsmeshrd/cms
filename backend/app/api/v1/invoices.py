@@ -21,7 +21,7 @@ from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.models.customer import Customer
 from app.models.finance import Invoice, InvoiceLineItem, InvoicePayment, InvoiceTaxLine
-from app.models.masters import BankAccount, HsnSacCode, TaxHead
+from app.models.masters import BankAccount, HsnSacCode, PaymentMode, TaxHead
 from app.models.platform import User
 from app.models.project import Project
 from app.models.rbac import FeatureToggle, Role
@@ -194,9 +194,14 @@ async def invoice_dashboard(
     # list_invoices' own identical reasoning — so it's excluded from Overdue
     # here the same way PAID already is.
     overdue = [r for r in rows if r.status not in ("PAID", "PEND_PAID") and r.due_date is not None and r.due_date < today]
+    # PaymentMode is LEFT joined, not inner: the widget's job is to show the
+    # last 10 payments, and a payment whose mode row has since been deleted
+    # must still appear (with an unresolved name) rather than vanish from
+    # the dashboard entirely.
     recent_payments = (
         await db.execute(
-            select(InvoicePayment, Invoice.customer_name_snapshot).join(Invoice, Invoice.id == InvoicePayment.invoice_id)
+            select(InvoicePayment, Invoice.customer_name_snapshot, PaymentMode.name).join(Invoice, Invoice.id == InvoicePayment.invoice_id)
+            .outerjoin(PaymentMode, PaymentMode.id == InvoicePayment.payment_mode_id)
             .where(InvoicePayment.status == "RECORDED").order_by(InvoicePayment.payment_date.desc()).limit(10)
         )
     ).all()
@@ -213,7 +218,13 @@ async def invoice_dashboard(
         "total_invoiced": total_invoiced, "total_received": total_received, "outstanding": outstanding,
         "overdue_count": len(overdue),
         "overdue_invoices": [{"invoice_number": r.invoice_number, "customer": r.customer_name_snapshot, "amount": r.balance_due, "due_date": r.due_date} for r in overdue],
-        "recent_payments": [{"customer": customer_name, "amount": p.amount_received, "mode": p.payment_mode_id, "date": p.payment_date} for p, customer_name in recent_payments],
+        # "mode" is a display field alongside the customer name and the
+        # formatted amount — it carries the payment mode's NAME ("Cheque"/
+        # "NEFT"), never the raw payment_mode_id it used to leak.
+        "recent_payments": [
+            {"customer": customer_name, "amount": p.amount_received, "mode": mode_name, "payment_mode_id": p.payment_mode_id, "date": p.payment_date}
+            for p, customer_name, mode_name in recent_payments
+        ],
         "active_employees": len(active_employees),
         "total_expenses": total_expenses,
         "active_projects": len(active_projects),
@@ -516,10 +527,18 @@ async def update_invoice(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="A Paid invoice is locked — corrections go through a Credit Note, never a direct edit")
     if body.customer_id != invoice.customer_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Customer cannot be changed after creation")
-    # body.project_id is deliberately never read below — same "locked after
-    # creation" treatment as customer_id, just silent rather than a 422:
-    # it's an internal field the create-from-project prefill sets once, not
-    # a user-facing one an edit could plausibly be trying to change.
+    # project_id gets the same "locked after creation" treatment as
+    # customer_id — it's an internal field the create-from-project prefill
+    # sets once, and §6.2's Manager-invoices visibility keys off it, so an
+    # edit must not be able to move an invoice between projects. It used to
+    # be locked SILENTLY (the value was simply never read), which meant a
+    # caller clearing or changing it got a 200 and an unchanged value with
+    # nothing saying the field was ignored. Now it says so, exactly like
+    # customer_id does. Omitting the field entirely still means "leave it
+    # alone" — the "starting blank" callers InvoiceCreate's own comment
+    # describes never send it, and must keep working.
+    if "project_id" in body.model_fields_set and body.project_id != invoice.project_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Project cannot be changed after creation")
 
     old_subtotal = invoice.subtotal
     old_tax = invoice.tax_amount
@@ -562,12 +581,19 @@ async def update_invoice(
     # through a mid-transaction refresh, so status reflects the new totals
     # in the same pass an edit while Sent/Part-Paid is allowed to legitimately
     # move status (e.g. reducing line items can newly reach Paid, §2.3).
-    new_claim_amount = subtotal + tax_amount - invoice.credit_note_total
-    resolved_status = resolve_invoice_status_after_payment(invoice.amount_received, invoice.withheld_total, new_claim_amount)
-    new_status = apply_paid_confirmation_gate(resolved_status, await _toggle_enabled(db, "Require Second Approval Before an Invoice Locks as Paid"))
-    if new_status == "PAID" and invoice.status != "PAID":
-        invoice.paid_at = datetime.now(timezone.utc)
-    invoice.status = new_status
+    # ...but only for an invoice that has actually been Sent.
+    # resolve_invoice_status_after_payment's floor is SENT ("Draft->Sent is a
+    # separate, explicit action, never payment-derived") so calling it on a
+    # DRAFT silently promoted every edited draft to SENT with sent_at/sent_by
+    # left null — and, since POST /send only accepts a DRAFT, permanently
+    # locked that invoice out of ever being legitimately sent.
+    if invoice.status != "DRAFT":
+        new_claim_amount = subtotal + tax_amount - invoice.credit_note_total
+        resolved_status = resolve_invoice_status_after_payment(invoice.amount_received, invoice.withheld_total, new_claim_amount)
+        new_status = apply_paid_confirmation_gate(resolved_status, await _toggle_enabled(db, "Require Second Approval Before an Invoice Locks as Paid"))
+        if new_status == "PAID" and invoice.status != "PAID":
+            invoice.paid_at = datetime.now(timezone.utc)
+        invoice.status = new_status
     invoice.updated_by = current_user.id
 
     customer = await db.get(Customer, invoice.customer_id)
@@ -622,14 +648,18 @@ async def record_payment(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Record Payment is only available on a Sent or Part-Paid invoice")
     if body.payment_date > date_type.today():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Payment Date cannot be in the future")
-    withheld_amount = body.withheld_amount or Decimal("0")
-    if body.amount_received + withheld_amount > invoice.balance_due:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Amount cannot exceed the balance due of {invoice.balance_due}")
-
     tax_head_name = print_label = None
     # §2.4: "Conditional — required once a Customer Withheld Tax is
-    # selected... Defaults to Invoice Subtotal."
+    # selected... Defaults to Invoice Subtotal." The selected head's own rate
+    # is what computes the figure — withheld_amount from the client is only
+    # ever an explicit override, exactly the way Purchase Bill's mirror-image
+    # withholding_amount_override works (purchase_bills.py). Before, the head
+    # was loaded only for its name/label snapshots and the rate was never
+    # read at all, so a payment where the customer withheld at source
+    # under-settled the invoice by the withheld amount and stranded it at
+    # Part-Paid with a phantom balance forever.
     withholding_calculated_on = body.withholding_calculated_on
+    withheld_amount = body.withheld_amount or Decimal("0")
     if body.customer_withheld_tax_head_id is not None:
         head = await db.get(TaxHead, body.customer_withheld_tax_head_id)
         if head is None:
@@ -639,7 +669,14 @@ async def record_payment(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=block_reason)
         tax_head_name = head.tax_name
         print_label = head.print_label or head.tax_name
-        withholding_calculated_on = body.withholding_calculated_on or "SUBTOTAL"
+        withholding_calculated_on = body.withholding_calculated_on or "SUBTOTAL"  # persist what actually drove the calc
+        basis = invoice.subtotal if withholding_calculated_on == "SUBTOTAL" else invoice.grand_total
+        snapshot = await build_tax_head_snapshot(db, head)
+        result = tax_engine.calculate_tax(snapshot, basis)
+        withheld_amount = body.withheld_amount if body.withheld_amount is not None else result.computed_amount
+
+    if body.amount_received + withheld_amount > invoice.balance_due:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Amount cannot exceed the balance due of {invoice.balance_due}")
 
     payment = InvoicePayment(
         id=str(uuid.uuid4()), invoice_id=invoice.id, financial_year_id=invoice.financial_year_id, amount_received=body.amount_received,

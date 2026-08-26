@@ -518,9 +518,23 @@ def _apply_run_totals(run: PayrollRun, results: list[tuple[PayrollRunEmployee, _
     run.total_net = sum((r.net_pay for r in included), Decimal("0"))
 
 
+def _effective_status(run: PayrollRun) -> str:
+    """A discarded run reads as DISCARDED everywhere this API reports a
+    status. discarded_at is the stored fact (payroll_runs.status itself is
+    pinned to ('DRAFT','PROCESSED') by ck_prun_status, so it physically
+    cannot hold a third value without a migration) — but a run the accountant
+    threw away must never keep presenting itself as a live Draft, which is
+    what it did: it stayed status=DRAFT, was unreachable through the
+    status=DISCARDED filter, and — because recalculate/confirm guarded only
+    on status — could still be confirmed into real payslips.
+    """
+    return "DISCARDED" if run.discarded_at is not None else run.status
+
+
 async def _load_run_out(db: AsyncSession, run: PayrollRun) -> PayrollRunOut:
     employees = (await db.execute(select(PayrollRunEmployee).where(PayrollRunEmployee.payroll_run_id == run.id))).scalars().all()
     out = PayrollRunOut.model_validate(run)
+    out.status = _effective_status(run)
     out.employees = list(employees)
     return out
 
@@ -546,11 +560,25 @@ async def list_payroll_runs(
     search: str | None = Query(None, description="Matches the resolved period label, e.g. 'July 2026'"),
     format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
 ) -> list[PayrollRunOut] | Response:
-    stmt = select(PayrollRun).where(PayrollRun.discarded_at.is_(None))
+    # DISCARDED is a reported status (see _effective_status), not a stored
+    # one — a discarded run stays out of the history by default, but asking
+    # for status=DISCARDED must actually find it. Previously discarded runs
+    # were unconditionally excluded, so a run that had been thrown away was
+    # not findable under ANY status filter.
+    statuses = list(status_filter or [])
+    want_discarded = "DISCARDED" in statuses
+    stored_statuses = [s for s in statuses if s != "DISCARDED"]
+    stmt = select(PayrollRun)
+    if want_discarded and stored_statuses:
+        stmt = stmt.where(PayrollRun.discarded_at.is_not(None) | (PayrollRun.discarded_at.is_(None) & PayrollRun.status.in_(stored_statuses)))
+    elif want_discarded:
+        stmt = stmt.where(PayrollRun.discarded_at.is_not(None))
+    else:
+        stmt = stmt.where(PayrollRun.discarded_at.is_(None))
+        if stored_statuses:
+            stmt = stmt.where(PayrollRun.status.in_(stored_statuses))
     if financial_year_id:
         stmt = stmt.where(PayrollRun.financial_year_id == financial_year_id)
-    if status_filter:
-        stmt = stmt.where(PayrollRun.status.in_(status_filter))
     if date_from:
         stmt = stmt.where(PayrollRun.pay_period_start >= date_from)
     if date_to:
@@ -580,7 +608,7 @@ async def list_payroll_runs(
         # the JSON branch below would return, just re-shaped.
         export_rows = [
             {
-                "period": f"{r.period_month}/{r.period_year}", "status": r.status,
+                "period": f"{r.period_month}/{r.period_year}", "status": _effective_status(r),
                 "total_gross": r.total_gross, "total_net": r.total_net, "employee_count": r.employee_count,
             }
             for r in runs
@@ -682,6 +710,8 @@ async def recalculate_payroll_run(
     run = await db.get(PayrollRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if run.discarded_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This run was discarded — start a new run for this period instead")
     if run.status != "DRAFT":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Only a Draft run can be recalculated")
     fy = await db.get(FinancialYear, run.financial_year_id)
@@ -725,6 +755,8 @@ async def discard_payroll_run(
     run = await db.get(PayrollRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if run.discarded_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This run was already discarded")
     if run.status != "DRAFT":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Only a Draft run can be discarded — a Processed run is permanent")
     run.discarded_at = datetime.now(timezone.utc)
@@ -744,6 +776,13 @@ async def confirm_payroll_run(
     run = await db.get(PayrollRun, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    # A discarded run must never generate payslips: discard is the
+    # accountant deliberately throwing this calculation away, and confirming
+    # it afterwards wrote real money against a run whose own row said it had
+    # been discarded (status PROCESSED with discarded_at set — a
+    # self-contradictory record).
+    if run.discarded_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This run was discarded — it cannot generate payslips. Start a new run for this period instead")
     if run.status != "DRAFT":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Already Processed")
     fy = await db.get(FinancialYear, run.financial_year_id)

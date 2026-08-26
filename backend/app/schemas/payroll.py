@@ -5,14 +5,27 @@ views), Reissue, Salary Certificates, Attendance & Time Basis.
 
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Every Month/Year selection in this module is resolved by
+# payroll_engine.resolve_pay_period, which builds real date() objects from
+# them — a month outside 1..12 (or a year the calendar/DB can't hold) raises
+# ValueError deep inside that call and surfaced as a 500. Bounded here (and,
+# for the GET endpoints, on their own Query params in
+# api/v1/attendance_reconciliation.py) so an out-of-range period is a plain
+# 422 naming the field, before any date arithmetic is attempted. The bounds
+# are the same ones the DB already enforces: ck_prun_month (1..12) and
+# ck_prun_year (2000..2200).
+PERIOD_MONTH_MIN, PERIOD_MONTH_MAX = 1, 12
+PERIOD_YEAR_MIN, PERIOD_YEAR_MAX = 2000, 2200
 
 
 # ============================================================ PAYROLL RUNS
 class PayrollRunCreate(BaseModel):
-    period_month: int
-    period_year: int
+    period_month: int = Field(ge=PERIOD_MONTH_MIN, le=PERIOD_MONTH_MAX)
+    period_year: int = Field(ge=PERIOD_YEAR_MIN, le=PERIOD_YEAR_MAX)
     employee_selection_mode: str  # ALL_ACTIVE | SPECIFIC_EMPLOYEES
     employee_ids: list[str] = []  # required when employee_selection_mode == SPECIFIC_EMPLOYEES
     working_days_override: Decimal | None = None
@@ -89,17 +102,36 @@ class PayrollRunOut(BaseModel):
 
 # ================================================== AD-HOC PAYSLIP ADJUSTMENTS
 class AdhocAdjustmentCreate(BaseModel):
-    applies_to_mode: str  # SINGLE_EMPLOYEE | MULTIPLE_EMPLOYEES | ALL_ACTIVE_EMPLOYEES
+    """Every field below is bounded to exactly what adhoc_payslip_adjustments'
+    own CHECK constraints accept (ck_adhoc_mode / ck_adhoc_type /
+    ck_adhoc_component / ck_adhoc_amount / ck_adhoc_label, plus label's
+    VARCHAR(191)). Previously these were plain `str`/`Decimal`: every illegal
+    value reached MySQL and came back as an unhandled 500, and the OpenAPI
+    schema advertised no legal values at all, so a client had no way to know
+    them. Literals put them in the schema AND reject them as a 422 naming the
+    offending field.
+    """
+
+    applies_to_mode: Literal["SINGLE_EMPLOYEE", "MULTIPLE_EMPLOYEES", "ALL_ACTIVE_EMPLOYEES"]
     employee_id: str | None = None
     employee_ids: list[str] = []  # used when MULTIPLE_EMPLOYEES
-    label: str
-    adjustment_type: str  # ADDITION | SUBTRACTION
-    amount: Decimal
+    label: str = Field(min_length=1, max_length=191)
+    adjustment_type: Literal["ADDITION", "SUBTRACTION"]
+    amount: Decimal = Field(gt=0)
     is_taxable: bool = True
     is_recurring: bool = False
-    applies_to_component: str = "GROSS"  # GROSS | NET
+    applies_to_component: Literal["GROSS", "NET"] = "GROSS"
     note: str | None = None
     effective_from: date | None = None
+
+    @model_validator(mode="after")
+    def _label_not_blank(self) -> "AdhocAdjustmentCreate":
+        # ck_adhoc_label: TRIM(label) <> '' — a label of only spaces passes
+        # min_length but is rejected by the database.
+        if not self.label.strip():
+            raise ValueError("label cannot be blank")
+        self.label = self.label.strip()
+        return self
 
 
 class AdhocAdjustmentOut(BaseModel):
@@ -227,6 +259,48 @@ class ReissueRequest(BaseModel):
     manual_net_pay: Decimal | None = None
     manual_total_earnings: Decimal | None = None
     manual_total_deductions: Decimal | None = None
+
+    @model_validator(mode="after")
+    def _manual_figures_must_reconcile(self) -> "ReissueRequest":
+        """A MANUAL_ADJUSTMENT reissue previously wrote its four figures onto
+        the payslip as four independent assignments, with no sign check and no
+        relation between them — so the API would happily persist a legally-
+        issued payslip stating Net Pay 99999.00 against Earnings 32000.00 /
+        Deductions 26000.00, or one made entirely of negative money.
+
+        Net Pay = Total Earnings − Total Deductions is not a policy invented
+        here: it is the exact identity payroll_run_employees.net_pay is a
+        MySQL GENERATED column of (models/payroll.py), i.e. what every
+        Run Payroll and every RECALCULATED reissue already produces. Payslip's
+        own net_pay is a plain column, so this is the only place that identity
+        can be enforced on the manual path. The three figures that participate
+        in it must therefore be supplied together — a partial override that
+        mixed new earnings with the payslip's old deductions is precisely how
+        an incoherent payslip was produced.
+        """
+        if self.reissue_method != "MANUAL_ADJUSTMENT":
+            return self
+        supplied = {
+            "manual_total_earnings": self.manual_total_earnings,
+            "manual_total_deductions": self.manual_total_deductions,
+            "manual_net_pay": self.manual_net_pay,
+        }
+        missing = [name for name, value in supplied.items() if value is None]
+        if missing:
+            raise ValueError(
+                "MANUAL_ADJUSTMENT requires manual_total_earnings, manual_total_deductions and manual_net_pay together "
+                f"(missing: {', '.join(missing)})"
+            )
+        negative = [name for name, value in {**supplied, "manual_gross_pay": self.manual_gross_pay}.items() if value is not None and value < 0]
+        if negative:
+            raise ValueError(f"A payslip figure cannot be negative: {', '.join(sorted(negative))}")
+        expected = self.manual_total_earnings - self.manual_total_deductions
+        if self.manual_net_pay != expected:
+            raise ValueError(
+                f"manual_net_pay must equal manual_total_earnings - manual_total_deductions "
+                f"({self.manual_total_earnings} - {self.manual_total_deductions} = {expected}), got {self.manual_net_pay}"
+            )
+        return self
 
 
 class PayslipReissueOut(BaseModel):

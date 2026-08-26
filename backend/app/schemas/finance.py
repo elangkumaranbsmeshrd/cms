@@ -4,6 +4,7 @@ Expense incl. Company Expenses (12) — Phase 4.
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -208,7 +209,13 @@ class InvoiceOut(BaseModel):
 class InvoicePaymentCreate(BaseModel):
     amount_received: Decimal
     customer_withheld_tax_head_id: str | None = None
-    withholding_calculated_on: str | None = None  # SUBTOTAL | GRAND_TOTAL
+    # The basis the withholding is computed on — the same two values the DB's
+    # ck_invpay_basis CHECK allows. Typed so an unrecognised basis is a 422
+    # naming both, not a value that silently falls through to Grand Total.
+    withholding_calculated_on: Literal["SUBTOTAL", "GRAND_TOTAL"] | None = None
+    # Optional explicit override of the head's own computed figure — mirrors
+    # PurchaseBillCreate.withholding_amount_override. Leave it out and the
+    # selected head's rate computes it.
     withheld_amount: Decimal | None = None
     payment_mode_id: str
     received_into_bank_account_id: str | None = None
@@ -245,7 +252,12 @@ class InvoicePaymentReverse(BaseModel):
 # ========================================================= CREDIT NOTE
 class CreditNoteCreate(BaseModel):
     invoice_id: str
-    reason: str  # BILLING_ERROR | CUSTOMER_DISPUTE | GOODS_NOT_DELIVERED | OTHER
+    # The permitted set is the DB's own ck_creditnotes_reason CHECK. Typed as
+    # a Literal so it (a) rejects an out-of-set value as a 422 naming the four
+    # allowed values instead of letting the constraint fire mid-request as a
+    # 500, and (b) actually appears as an enum in the OpenAPI schema, which a
+    # bare `str` never did — a client had no way to discover the set at all.
+    reason: Literal["BILLING_ERROR", "CUSTOMER_DISPUTE", "GOODS_NOT_DELIVERED", "OTHER"]
     reason_detail: str
     credit_amount: Decimal
     line_items_affected: list[str] = []  # invoice_line_item_ids, optional

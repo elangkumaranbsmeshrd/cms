@@ -10,10 +10,12 @@ but-undelivered row with an explanatory error_detail when Sending is off or
 misconfigured, same as any other real send.
 """
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -36,8 +38,39 @@ from app.services import email_transport, list_export
 from app.services.crypto import encrypt_secret
 from app.services.pdf_engine import ColumnSpec
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/masters/email-configuration", tags=["masters"])
 SCREEN = "masters.email_configuration"
+
+# Migration 0002's CHECK constraints on email_server_settings, mapped to the
+# message a user can act on. EmailServerSettingsWrite types provider /
+# encryption / smtp_port as plain str|int, so nothing rejects an out-of-range
+# value before the INSERT — and MySQL raises a CHECK failure (3819) as an
+# OperationalError, which no handler here caught at all, so every one of these
+# surfaced as a raw 500. Same _as_client_error split as
+# masters_company_profile.py; the realistic case is ck_ess_api_key — an admin
+# switching Provider from Custom SMTP to Mailgun and saving before pasting the
+# key.
+_ALLOWED_PROVIDERS = ("CUSTOM_SMTP", "SENDGRID", "SES", "MAILGUN", "POSTMARK")
+_PROVIDER_MESSAGE = "Provider must be one of " + ", ".join(_ALLOWED_PROVIDERS)
+
+_CHECK_CONSTRAINT_MESSAGES = {
+    "ck_ess_provider": _PROVIDER_MESSAGE,
+    "ck_ess_encryption": "Encryption must be STARTTLS, SSL_TLS or NONE",
+    "ck_ess_port": "SMTP Port must be between 1 and 65535",
+    "ck_ess_api_key": "This provider needs an API key — supply api_key when Provider is not CUSTOM_SMTP",
+    "ck_ess_smtp_complete": "CUSTOM_SMTP needs SMTP Host, SMTP Port and Encryption",
+}
+
+
+def _as_client_error(exc: DBAPIError) -> HTTPException:
+    logger.warning("db constraint violation: %s", exc.orig)
+    text = str(exc.orig)
+    for constraint, message in _CHECK_CONSTRAINT_MESSAGES.items():
+        if constraint in text:
+            return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
+    return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Rejected by a database constraint")
 
 _TEMPLATE_LIST_COLUMNS = [
     ColumnSpec("template_name", "Template Name"),
@@ -104,6 +137,13 @@ async def upsert_server_settings(
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN, action="edit")),
 ) -> dict:
+    # Mirrors ck_ess_provider, checked here first for the same reason
+    # masters_bank_accounts.py's deactivate mirrors its trigger: MySQL
+    # evaluates ck_ess_api_key before ck_ess_provider, so an unknown provider
+    # otherwise comes back complaining about a missing API key instead of
+    # about the provider. It also decides which secret field is read below.
+    if body.provider not in _ALLOWED_PROVIDERS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_PROVIDER_MESSAGE)
     row = (await db.execute(select(EmailServerSettings))).scalar_one_or_none()
     # Found by the Phase 1 audit: credential_hint (and the encrypted secret
     # itself) must only change when THIS request actually supplies a new
@@ -134,7 +174,11 @@ async def upsert_server_settings(
         else:
             row.api_key_encrypted = encrypt_secret(body.api_key)
     row.updated_by = current_user.id
-    await db.commit()
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc) from exc
     await db.refresh(row)
     return _masked_settings(row, perms)
 

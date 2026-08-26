@@ -1211,19 +1211,25 @@ async def my_timesheet(
     task_id: str | None = Query(None),
     format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
 ) -> list[TimesheetEntryOut] | Response:
+    # A login with no linked Employee record (Super Admin, typically) simply has
+    # no timesheet — zero rows, NOT an early return: `format` has to keep
+    # working here exactly as it does on every other export-capable endpoint in
+    # this module, otherwise a client that asked for a PDF and branches on
+    # content-type (or triggers a file download) silently gets JSON back from
+    # this one endpoint. An empty export is a valid export.
     own_id = await org_scope.get_own_employee_id(db, current_user)
-    if own_id is None:
-        return []
-    stmt = select(TimesheetEntry).where(TimesheetEntry.employee_id == own_id)
-    if date_from:
-        stmt = stmt.where(TimesheetEntry.entry_date >= date_from)
-    if date_to:
-        stmt = stmt.where(TimesheetEntry.entry_date <= date_to)
-    if status_filter:
-        stmt = stmt.where(TimesheetEntry.status.in_(status_filter))
-    if task_id:
-        stmt = stmt.where(TimesheetEntry.task_id == task_id)
-    rows = list((await db.execute(stmt.order_by(TimesheetEntry.entry_date.desc()))).scalars().all())
+    rows: list[TimesheetEntry] = []
+    if own_id is not None:
+        stmt = select(TimesheetEntry).where(TimesheetEntry.employee_id == own_id)
+        if date_from:
+            stmt = stmt.where(TimesheetEntry.entry_date >= date_from)
+        if date_to:
+            stmt = stmt.where(TimesheetEntry.entry_date <= date_to)
+        if status_filter:
+            stmt = stmt.where(TimesheetEntry.status.in_(status_filter))
+        if task_id:
+            stmt = stmt.where(TimesheetEntry.task_id == task_id)
+        rows = list((await db.execute(stmt.order_by(TimesheetEntry.entry_date.desc()))).scalars().all())
 
     if format:
         # RBAC §2.2(f): export exactly the filtered/scoped set on screen —

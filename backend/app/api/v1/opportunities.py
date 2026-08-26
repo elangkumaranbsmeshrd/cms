@@ -10,7 +10,7 @@ from datetime import date as date_type, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,10 +187,18 @@ def _build_opportunity_filters(
     if lost_reason:
         stmt = stmt.where(Opportunity.lost_reason.ilike(f"%{lost_reason}%"))
     if stale_days is not None:
+        # §2.1 "stale — no activity in N days". An opportunity that has never
+        # had an activity logged is measured from when it was CREATED, not
+        # treated as unconditionally stale: a bare
+        # `last_activity_at IS NULL OR last_activity_at < cutoff` matched
+        # every never-touched deal at every threshold, so stale_days=99999
+        # ("nothing in 273 years") returned deals created two days ago and
+        # the whole filter — plus stage_summary's counts and ₹ totals, which
+        # share this helper — degraded to a constant row set.
         cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
         stmt = stmt.where(
             Opportunity.stage.notin_(("WON", "LOST")),
-            or_(Opportunity.last_activity_at.is_(None), Opportunity.last_activity_at < cutoff),
+            func.coalesce(Opportunity.last_activity_at, Opportunity.created_at) < cutoff,
         )
     if created_by:
         stmt = stmt.where(Opportunity.created_by == created_by)

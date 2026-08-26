@@ -1,0 +1,12 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/v1/offer-letters/{letter_id}/generate",
+    "severity": "WRONG",
+    "status_observed": "200, but the generated PDF prints the letter \"n\" where the currency symbol should be",
+    "what_is_wrong": "Every money amount in the generated offer/appointment/resignation-acceptance letter PDF renders as \"n45,000.00\" instead of \"Rs 45,000.00\". The PDF is built with the base-14 Helvetica font under WinAnsiEncoding, which has no glyph for U+20B9; ReportLab silently substitutes byte 0x6E ('n'). The letter is emailed to the employee as an official document, so the defect is customer-visible.",
+    "evidence": "POST /api/v1/employees/32f38afa-06a7-4d6e-b56b-a5370654cffb/offer-letters {\"letter_type\":\"OFFER_LETTER\",\"joining_date_snapshot\":\"2026-01-05\",\"salary_structure_id\":\"7e39f156-5e0e-4d6a-a9ee-4376c43ad4b2\"} -> 201 (id aaf813f4-186f-4387-9111-335bcffd4371)\nPOST /api/v1/offer-letters/aaf813f4-186f-4387-9111-335bcffd4371/generate -> 200 {\"status\":\"GENERATED\",\"pdf_file_id\":\"41bb5b02-e9e7-47d0-a2ba-8ce876cd1b56\",...}\nGET /api/v1/files/41bb5b02-e9e7-47d0-a2ba-8ce876cd1b56 -> 200, 2741 bytes of application/pdf.\n\nRaw content stream around the first amount:\n  ... 12 TL (n) Tj /F1 9 Tf 12 TL (45,000.00) Tj T* ET\nPage font resource: /F1 {'/BaseFont': '/Helvetica', '/Encoding': '/WinAnsiEncoding', '/Subtype': '/Type1'}\n\nText extraction of the same page:\n  Compensation Summary / Basic Salary (Monthly) / <box>45,000.00 / HRA (Monthly) / <box>18,000.00 / Gross Monthly / <box>78,000.00 / Annual CTC / <box>936,000.00 / Statutory Components / ZZTest PT Fixed / <box>200.00 (Employee) / Custom Terms / Joining Bonus / +<box>25,000.00 (One-time)",
+    "suspected_cause": "app/api/v1/employee_lifecycle.py:634 `_money_str` returns f\"\u00e2\u201a\u00b9{v:,.2f}\" (and app/services/pdf_engine.py:109 does the same) while no Unicode TTF is ever registered with ReportLab \u00e2\u20ac\u201d app/services/pdf_engine.py contains no registerFont/TTFont call, so all text falls back to the base-14 Helvetica/WinAnsiEncoding fonts.",
+    "group": "employee-lifecycle"
+  }
+]

@@ -83,6 +83,25 @@ async def _guard_own_or_manage(db: AsyncSession, current_user: User, perms: Perm
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="You may only edit your own tax declarations")
 
 
+async def _recompute_declaration_totals(db: AsyncSession, declaration: TaxDeclaration) -> None:
+    """Re-derive the three header aggregates from the declaration's own lines.
+
+    These used to be written ONLY inside submit and verify, so between those
+    two moments the header contradicted the lines sitting right beside it in
+    the same payload: a DRAFT reported total_declared_amount 0.00 over lines
+    adding up to 105000.00, and a line rejected during verification left
+    has_flagged_lines false while that line's own flagged_for_review was
+    true. Every handler that can change a line now calls this, so the header
+    is never stale.
+    """
+    lines = (
+        await db.execute(select(TaxDeclarationLine).where(TaxDeclarationLine.tax_declaration_id == declaration.id))
+    ).scalars().all()
+    declaration.total_declared_amount = sum((line.amount_declared for line in lines), Decimal("0"))
+    declaration.total_eligible_amount = sum((line.amount_accepted_for_calculation for line in lines), Decimal("0"))
+    declaration.has_flagged_lines = any(line.flagged_for_review for line in lines)
+
+
 async def _declaration_to_out(db: AsyncSession, declaration: TaxDeclaration) -> TaxDeclarationOut:
     lines = (
         await db.execute(
@@ -127,12 +146,32 @@ async def elect_tax_scheme(
         elected_at=datetime.now(timezone.utc), elected_by_user_id=current_user.id,
         created_by=current_user.id, updated_by=current_user.id,
     )
-    db.add(row)
-    await db.flush()
+    # ORDER MATTERS. ux_etse_current is UNIQUE over the generated column
+    # current_guard = IF(superseded_at IS NULL, employee_id:financial_year_id,
+    # NULL), so exactly one un-superseded election may exist per employee per
+    # FY. Inserting the new row first (what this used to do) meant both rows
+    # carried the same guard value for the duration of the transaction and
+    # every scheme *change* died on the unique key — an unguarded flush, so
+    # it escaped as a 500 and an employee's tax scheme could never be changed
+    # once one was on record. Retire the old election first, flush that
+    # UPDATE, then insert.
+    #
+    # superseded_by_election_id can only be set AFTER the insert:
+    # fk_etse_superseded_by points back into this same table and InnoDB
+    # checks it immediately, so pointing at row.id before row exists would
+    # just trade one IntegrityError for another.
     if previous is not None:
         previous.superseded_at = datetime.now(timezone.utc)
-        previous.superseded_by_election_id = row.id
         previous.updated_by = current_user.id
+        await db.flush()
+    db.add(row)
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
+    if previous is not None:
+        previous.superseded_by_election_id = row.id
     try:
         await db.commit()
     except DBAPIError as exc:
@@ -183,7 +222,15 @@ async def create_tax_declaration(
         created_by=current_user.id, updated_by=current_user.id,
     )
     db.add(declaration)
-    await db.flush()
+    # ux_td_employee_fy rejects a second declaration for the same employee +
+    # FY right here, at the INSERT — outside the try/except around the commit
+    # below, which is why the handler's own "already exists" message was
+    # unreachable dead code and a duplicate 500'd instead of 409'ing.
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "A Tax Declaration for this Financial Year already exists") from exc
 
     heads = (
         await db.execute(
@@ -267,6 +314,8 @@ async def update_declaration_line(
         # amount_declared would trip the same CHECK fixed above.
         line.other_description = body.other_description
     line.updated_by = current_user.id
+    await _recompute_declaration_totals(db, declaration)
+    declaration.updated_by = current_user.id
     try:
         await db.commit()
     except DBAPIError as exc:
@@ -325,10 +374,7 @@ async def submit_tax_declaration(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Already submitted")
 
     lines = (await db.execute(select(TaxDeclarationLine).where(TaxDeclarationLine.tax_declaration_id == declaration.id))).scalars().all()
-    total_declared = Decimal("0")
-    any_flagged = False
     for line in lines:
-        total_declared += line.amount_declared
         if line.requires_proof_snapshot and line.amount_declared > 0:
             proof_count = (
                 await db.execute(select(TaxDeclarationLineProof).where(TaxDeclarationLineProof.tax_declaration_line_id == line.id))
@@ -336,10 +382,8 @@ async def submit_tax_declaration(
             if not proof_count:
                 line.flagged_for_review = True
                 line.verification_status = "PROOF_MISSING"
-                any_flagged = True
 
-    declaration.total_declared_amount = total_declared
-    declaration.has_flagged_lines = any_flagged
+    await _recompute_declaration_totals(db, declaration)
     declaration.status = "SUBMITTED"
     declaration.submitted_at = datetime.now(timezone.utc)
     declaration.submitted_by_user_id = current_user.id
@@ -371,6 +415,9 @@ async def verify_declaration_line(
     else:
         line.amount_accepted_for_calculation = Decimal("0")
     line.updated_by = current_user.id
+    declaration = await db.get(TaxDeclaration, line.tax_declaration_id)
+    await _recompute_declaration_totals(db, declaration)
+    declaration.updated_by = current_user.id
     try:
         await db.commit()
     except DBAPIError as exc:
@@ -403,8 +450,7 @@ async def verify_tax_declaration(
     if any(line.verification_status == "NOT_REVIEWED" for line in lines):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Every line must be reviewed before the declaration can be Verified")
 
-    declaration.total_eligible_amount = sum((line.amount_accepted_for_calculation for line in lines), Decimal("0"))
-    declaration.has_flagged_lines = any(line.flagged_for_review for line in lines)
+    await _recompute_declaration_totals(db, declaration)
     declaration.status = "VERIFIED"
     declaration.verified_by = current_user.id
     declaration.verified_at = datetime.now(timezone.utc)

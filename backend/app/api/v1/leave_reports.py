@@ -164,13 +164,17 @@ async def balances_summary(
     )
 
     totals: dict[str, dict] = {}
-    for balance, _employee, leave_type_name, _department_name in rows:
+    # "Employees" is a headcount, so it counts distinct employees, never
+    # balance rows — same accumulate-a-set pattern as leave_liability below.
+    seen_employees: dict[str, set[str]] = {}
+    for balance, employee, leave_type_name, _department_name in rows:
         bucket = totals.setdefault(leave_type_name, {
             "leave_type_name": leave_type_name, "employee_count": 0,
             "total_allowed_days": Decimal("0"), "total_carried_forward_days": Decimal("0"),
             "total_taken_days": Decimal("0"), "total_pending_days": Decimal("0"), "total_remaining_days": Decimal("0"),
         })
-        bucket["employee_count"] += 1
+        seen_employees.setdefault(leave_type_name, set()).add(employee.id)
+        bucket["employee_count"] = len(seen_employees[leave_type_name])
         bucket["total_allowed_days"] += balance.allowed_days
         bucket["total_carried_forward_days"] += balance.carried_forward_days
         bucket["total_taken_days"] += balance.taken_days
@@ -211,13 +215,19 @@ async def leave_by_department(
     )
 
     totals: dict[str, dict] = {}
-    for balance, _employee, _leave_type_name, department_name in rows:
+    # An employee holds one balance row per Leave Type, so counting rows here
+    # multiplied the headcount by the number of Leave Types (5 employees x 7
+    # types reported as 35). Count distinct employees instead — the same
+    # accumulate-a-set pattern leave_liability below already uses.
+    seen_employees: dict[str, set[str]] = {}
+    for balance, employee, _leave_type_name, department_name in rows:
         bucket = totals.setdefault(department_name, {
             "department_name": department_name, "employee_count": 0,
             "total_allowed_days": Decimal("0"), "total_carried_forward_days": Decimal("0"),
             "total_taken_days": Decimal("0"), "total_pending_days": Decimal("0"), "total_remaining_days": Decimal("0"),
         })
-        bucket["employee_count"] += 1
+        seen_employees.setdefault(department_name, set()).add(employee.id)
+        bucket["employee_count"] = len(seen_employees[department_name])
         bucket["total_allowed_days"] += balance.allowed_days
         bucket["total_carried_forward_days"] += balance.carried_forward_days
         bucket["total_taken_days"] += balance.taken_days

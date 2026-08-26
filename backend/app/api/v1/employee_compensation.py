@@ -122,6 +122,8 @@ def _recompute_and_apply_totals(structure: SalaryStructure, lines: list[SalarySt
         insurance_employer_contribution_monthly=structure.insurance_employer_contribution_monthly,
         basic_salary_monthly=structure.basic_salary_monthly,
         dearness_allowance_monthly=structure.dearness_allowance_monthly,
+        lta_amount=structure.lta_amount,
+        lta_payout_basis=structure.lta_payout_basis,
     )
     structure.total_employee_statutory_monthly = totals.total_employee_statutory_monthly
     structure.total_employer_statutory_ctc_monthly = totals.total_employer_statutory_ctc_monthly
@@ -240,6 +242,7 @@ async def create_salary_structure(
         insurance_employee_contribution_monthly=insurance_employee,
         insurance_employer_contribution_monthly=insurance_employer,
         basic_salary_monthly=body.basic_salary_monthly, dearness_allowance_monthly=body.dearness_allowance_monthly,
+        lta_amount=body.lta_amount, lta_payout_basis=body.lta_payout_basis,
     )
     if not totals.is_wage_code_compliant and not (body.wage_code_override_reason and body.wage_code_override_reason.strip()):
         raise HTTPException(

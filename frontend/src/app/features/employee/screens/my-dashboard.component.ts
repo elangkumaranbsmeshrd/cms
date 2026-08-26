@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
@@ -82,6 +82,8 @@ const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June',
 
     @if (isLoading()) {
       <div class="empty"><p>Loading…</p></div>
+    } @else if (loadError()) {
+      <div class="empty"><p>{{ loadError() }}</p></div>
     } @else if (!data()) {
       <div class="empty"><p>No employee record is linked to your login.</p></div>
     } @else {
@@ -184,6 +186,10 @@ export class MyDashboardComponent implements OnInit {
 
   protected readonly isLoading = signal(true);
   protected readonly data = signal<DashboardData | null>(null);
+  /** Only a 404 genuinely means "this login has no Employee row". Every other
+   * failure used to land on that same message, so a 500 or a dropped
+   * connection told the user something factually untrue about their account. */
+  protected readonly loadError = signal<string | null>(null);
 
   ngOnInit(): void {
     this.http.get<DashboardData>(`${environment.apiBaseUrl}/employees/me/dashboard`).subscribe({
@@ -191,7 +197,16 @@ export class MyDashboardComponent implements OnInit {
         this.data.set(d);
         this.isLoading.set(false);
       },
-      error: () => this.isLoading.set(false),
+      error: (err: HttpErrorResponse) => {
+        if (err.status !== 404) {
+          this.loadError.set(
+            typeof err.error?.detail === 'string'
+              ? err.error.detail
+              : 'Could not load your dashboard. Please retry in a moment.',
+          );
+        }
+        this.isLoading.set(false);
+      },
     });
   }
 
