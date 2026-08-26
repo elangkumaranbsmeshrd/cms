@@ -32,6 +32,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Layer 4. Karma was configured from the start and had ZERO specs, so
+      # nothing was running it — a suite that never executes in CI decays into
+      # a suite that does not compile. ChromeHeadless is present on the GitHub
+      # runner image; --watch=false is what makes it exit rather than hang.
+      - name: Unit tests
+        run: npx ng test --watch=false --browsers=ChromeHeadless
+
       - name: Production build
         run: npx ng build --configuration production
 
