@@ -172,8 +172,21 @@ def resolve_hours(
     else:
         start = check_in.hour * 60 + check_in.minute + check_in.second / 60
         end = check_out.hour * 60 + check_out.minute + check_out.second / 60
-        if spans_midnight or end < start:
+        if spans_midnight:
             end += 24 * 60
+        elif end < start:
+            # NOT an overnight shift — `spans_midnight` is the caller's own
+            # statement that this was a same-day shift, and it defaults to
+            # False in the schema. Treating a backwards pair as overnight
+            # anyway turned a transposed typo into a paid 15-hour day: 18:00
+            # in / 09:00 out silently became gross 15.00, balance +7.00,
+            # FULL_DAY. Attendance "records hours, not presence", so the one
+            # thing it must not do is invent hours nobody worked. A real
+            # overnight shift is recorded by setting spans_midnight.
+            raise ValueError(
+                "Check-Out is earlier than Check-In. If this was an overnight shift, mark it as spanning midnight; "
+                "otherwise correct the times."
+            )
         gross = Decimal(str((end - start) / 60))
 
     net = gross - break_hours

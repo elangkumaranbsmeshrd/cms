@@ -168,9 +168,17 @@ async def record_attendance(
         is_optional_holiday=optional_holiday is not None, saturday_override=override_snapshot,
         is_last_saturday_of_month=_is_last_saturday(body.attendance_date),
     )
-    hours = resolve_hours(
-        body.check_in_time, body.check_out_time, body.break_hours, day.required_hours, policy_snapshot, spans_midnight=body.spans_midnight
-    )
+    try:
+        hours = resolve_hours(
+            body.check_in_time, body.check_out_time, body.break_hours, day.required_hours, policy_snapshot, spans_midnight=body.spans_midnight
+        )
+    except ValueError as exc:
+        # resolve_hours rejects a Check-Out earlier than Check-In that is not
+        # marked as spanning midnight. That is a correction the person typing
+        # can make, so it must read as a 422 against the field — not the
+        # unhandled 500 a bare ValueError from a service becomes here (the
+        # same trap allocate_number was already fixed for).
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     row = AttendanceRecord(
         id=str(uuid.uuid4()), employee_id=employee.id, attendance_date=body.attendance_date, financial_year_id=fy.id,

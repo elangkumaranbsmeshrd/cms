@@ -346,19 +346,8 @@ def test_day_status_derivation_cuts_both_ways_short_presence_can_be_a_full_day()
     assert hours.day_status == "FULL_DAY"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BUG (reported, not fixed): a check-out BEFORE the check-in is silently "
-        "reinterpreted as an overnight shift instead of being rejected. "
-        "resolve_hours does `if spans_midnight or end < start: end += 24*60`, so "
-        "the transposed pair 18:00 in / 09:00 out with spans_midnight=False "
-        "(the schema default, i.e. 'this was a same-day shift') returns "
-        "gross 15.00, net 15.00, balance +7.00, FULL_DAY - a typo turned into "
-        "seven hours of credit. The explicit spans_midnight flag exists "
-        "precisely so the engine does not have to guess."
-    ),
-)
+# REGRESSION TEST for a real bug this suite found, now FIXED:
+# a backwards pair is only treated as overnight when the caller says so.
 def test_check_out_before_check_in_must_be_rejected_not_silently_reinterpreted():
     # COMPLETE-TEST-PROMPT §Layer 1 case list: "check-out before check-in
     # (must reject)". A same-day pair (spans_midnight=False) where Check-Out

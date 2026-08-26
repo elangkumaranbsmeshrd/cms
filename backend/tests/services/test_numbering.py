@@ -340,18 +340,9 @@ async def test_the_reset_honours_a_non_default_starting_number(db_session):
     assert await allocate_number(db_session, "PRJ", fy_2027.id, fy_2027.label) == "PRJ-2027-0500"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING (bug in app/services/numbering.py, NOT in this test): allocate_number() "
-        "never reads NumberPrefixRule.resets_every_fy. It keys document_number_sequences on "
-        "(code_type, financial_year_id) unconditionally, and all 12 call sites pass the current "
-        "fy.id unconditionally, so EVERY code type restarts every financial year no matter how "
-        "Resets Every FY is set. Setting it to No in Masters has no effect whatsoever. Remove "
-        "this xfail once allocate_number honours the flag (financial_year_id=None for a "
-        "continuous series)."
-    ),
-)
+# REGRESSION TEST for a real bug this suite found, now FIXED:
+# allocate_number now keys the sequence on NULL when the rule says the
+# series does not reset, giving the single unbroken run the flag promises.
 async def test_the_series_does_not_restart_when_resets_every_fy_is_off(db_session):
     """APPENDIX-B:47 conditions the restart on "Resets Every FY = Yes", and
     `resets_every_fy` is a real, Super-Admin-editable Masters field

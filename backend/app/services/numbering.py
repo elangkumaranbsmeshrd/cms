@@ -10,7 +10,7 @@ transaction, matching ARCH-1's own stated design for document_number_sequences.
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.masters import NumberPrefixRule
@@ -40,21 +40,50 @@ async def allocate_number(db: AsyncSession, code_type: str, financial_year_id: s
         # clean 4xx — none of them caught ValueError, only DBAPIError.
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"No Number Prefix Rule configured for code type '{code_type}' — Super Admin must add one in Masters first")
 
+    # APPENDIX-B:47 — "when Resets Every FY = Yes, the running number restarts
+    # at the Starting Number on the FIRST record created in each new financial
+    # year." The restart is CONDITIONAL on the flag, and this used to key the
+    # sequence on financial_year_id unconditionally, so every code type
+    # restarted every year no matter how the flag was set. Setting it to No in
+    # Masters did nothing at all, and FY2027 reissued INV-...-00001 — a
+    # duplicate running number inside what is meant to be one continuous
+    # series. Keying on NULL instead gives the single unbroken sequence the
+    # flag promises; callers still pass the real FY, since fy_label is a
+    # separate concern (include_fy_in_code decides whether it is rendered).
+    sequence_fy_id = financial_year_id if rule.resets_every_fy else None
+
     seq = (
         await db.execute(
             select(DocumentNumberSequence)
-            .where(DocumentNumberSequence.code_type == code_type, DocumentNumberSequence.financial_year_id == financial_year_id)
+            .where(DocumentNumberSequence.code_type == code_type, DocumentNumberSequence.financial_year_id == sequence_fy_id)
             .with_for_update()
         )
     ).scalar_one_or_none()
     if seq is None:
+        start_at = rule.starting_number
+        if not rule.resets_every_fy:
+            # Switching a code type from resetting to continuous must not
+            # re-issue numbers already printed on real documents. Per-FY rows
+            # from the old behaviour still exist, so the new unbroken series
+            # begins above the highest number any of them reached rather than
+            # back at the Starting Number.
+            highest = (
+                await db.execute(
+                    select(func.max(DocumentNumberSequence.next_number)).where(
+                        DocumentNumberSequence.code_type == code_type
+                    )
+                )
+            ).scalar_one_or_none()
+            if highest is not None and highest > start_at:
+                start_at = highest
+
         seq = DocumentNumberSequence(
             id=str(uuid.uuid4()),
             code_type=code_type,
-            financial_year_id=financial_year_id,
+            financial_year_id=sequence_fy_id,
             prefix=rule.prefix,
             digits=rule.running_number_digits,
-            next_number=rule.starting_number,
+            next_number=start_at,
         )
         db.add(seq)
         await db.flush()
