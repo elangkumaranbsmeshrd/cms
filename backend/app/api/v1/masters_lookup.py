@@ -61,12 +61,13 @@ since the factory has no per-entity knowledge beyond that shape.
 """
 
 import logging
+import types as _types
 import typing
 import uuid
-from typing import Any, Awaitable, Callable
+from typing import Annotated, Any, Awaitable, Callable, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, StringConstraints, create_model
 from sqlalchemy import or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,11 +86,30 @@ BeforeWriteHook = Callable[[dict, AsyncSession, Any | None], Awaitable[dict]]
 _ALIGN_RIGHT_TOKENS = ("pct", "percent", "count", "days", "quantity", "qty")
 
 
+def _strip_constraints(tp: Any) -> Any:
+    """Drops every `Annotated[...]` wrapper (pydantic constraints) from a type,
+    recursing through unions, so a constrained spec such as
+    `Annotated[int, Field(gt=0)] | None` collapses back to `int | None`.
+
+    Used for two things: the export/alignment inference below (which compares
+    against bare `int`), and `out_schema` — a response model must stay
+    permissive, or a row that predates a newly added constraint would blow up
+    at serialization time with a 500 instead of merely being un-editable.
+    """
+    if typing.get_origin(tp) is Annotated:
+        return _strip_constraints(typing.get_args(tp)[0])
+    origin = typing.get_origin(tp)
+    if origin is Union or origin is _types.UnionType:
+        return Union[tuple(_strip_constraints(a) for a in typing.get_args(tp))]
+    return tp
+
+
 def _base_type(tp: Any) -> Any:
     """Unwraps `X | None` (and other `Optional[X]` spellings) down to `X`, so
     alignment/formatting decisions look at the real underlying type instead
     of the Union.
     """
+    tp = _strip_constraints(tp)
     args = typing.get_args(tp)
     if args:
         non_none = [a for a in args if a is not type(None)]
@@ -128,6 +148,34 @@ def _export_columns_for(fields: dict[str, tuple[type, Any]]) -> list[ColumnSpec]
 
 def _export_title_for(screen_key: str) -> str:
     return screen_key.split(".")[-1].replace("_", " ").title()
+
+
+_NON_BLANK = StringConstraints(strip_whitespace=True, min_length=1)
+_TRIMMED = StringConstraints(strip_whitespace=True)
+
+
+def _writable_field(spec: tuple[type, Any]) -> tuple[type, Any]:
+    """Every caller-writable text column on these 15 sub-masters is trimmed on
+    the way in, and a *required* one may not be blank after trimming.
+
+    Found live by the audit sweep: `POST /masters/departments {"name":"   "}`
+    returned 201 and stored three spaces, producing a row that renders as an
+    empty entry in every dropdown that consumes it. Worse, because nothing
+    trimmed, the DB unique index that correctly rejects an exact duplicate name
+    with a 409 was bypassable by appending one trailing space — two visually
+    identical rows could coexist. Trimming here is what makes that index mean
+    what the screen says it means.
+
+    This is deliberately applied to the WRITE schemas only (`write_schema` /
+    `create_schema`), never to `out_schema` — see `_strip_constraints`.
+    """
+    ftype, default = spec
+    if _base_type(ftype) is not str:
+        return spec
+    constrained = Annotated[str, _NON_BLANK if default is ... else _TRIMMED]
+    if _strip_constraints(ftype) is str:
+        return (constrained, default)
+    return (Union[constrained, None], default)
 
 
 logger = logging.getLogger(__name__)
@@ -218,19 +266,28 @@ def build_lookup_router(
     router = APIRouter(prefix=prefix, tags=[tag])
     tracks_references = referenced_by is not None
 
+    # Constraints belong on the way IN (write_fields) and must not appear on
+    # the way OUT (out_fields): a row that predates a constraint still has to
+    # serialize, or tightening validation would turn old rows into 500s.
+    write_fields = {key: _writable_field(spec) for key, spec in fields.items()}
+    out_fields = {key: (_strip_constraints(ftype), dflt) for key, (ftype, dflt) in fields.items()}
+    out_read_only = {key: (_strip_constraints(ftype), dflt) for key, (ftype, dflt) in (read_only_fields or {}).items()}
+
     out_schema = create_model(
         f"{model.__name__}Out",
         __base__=BaseModel,
         id=(str, ...),
         is_active=(bool, True),
-        **fields,
-        **(read_only_fields or {}),
+        **out_fields,
+        **out_read_only,
         **({"is_referenced": (bool, False)} if tracks_references else {}),
     )
     out_schema.model_config = ConfigDict(from_attributes=True)
-    write_schema = create_model(f"{model.__name__}Write", **fields)
+    write_schema = create_model(f"{model.__name__}Write", **write_fields)
     create_schema = (
-        create_model(f"{model.__name__}Create", **fields, **create_only_fields) if create_only_fields else write_schema
+        create_model(f"{model.__name__}Create", **write_fields, **create_only_fields)
+        if create_only_fields
+        else write_schema
     )
 
     _export_columns = _export_columns_for(fields) + ([ColumnSpec("is_referenced", "Used")] if tracks_references else [])

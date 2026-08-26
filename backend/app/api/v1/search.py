@@ -68,7 +68,9 @@ async def search(
     if (await resolve_permission(db, current_user, "customer.directory")).mode == "full":
         rows = (
             await db.execute(
-                select(Customer.id, Customer.company_name, Customer.customer_code).where(Customer.company_name.ilike(like)).limit(_LIMIT_PER_TYPE)
+                select(Customer.id, Customer.company_name, Customer.customer_code)
+                .where(or_(Customer.company_name.ilike(like), Customer.customer_code.ilike(like)))
+                .limit(_LIMIT_PER_TYPE)
             )
         ).all()
         hits += [SearchHit(type="Customer", id=r.id, label=r.company_name, sublabel=r.customer_code) for r in rows]

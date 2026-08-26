@@ -66,6 +66,32 @@ _MATRIX_SCREEN = "rbac.permission_matrix"
 _OVERRIDES_SCREEN = "rbac.overrides"
 _CHANGE_LOG_SCREEN = "rbac.change_log"
 
+# The two value vocabularies this module writes. Both are pinned by a DB CHECK
+# constraint (ck_role_perm_mode on role_permissions.mode; ck_rpf_mode on
+# role_permission_fields.mode, widened to include 'read' by migration 0010) and
+# both are read back as-is by app/rbac/resolver.py. Validated here so an
+# out-of-range value is a 422 naming the legal set — before this, `mode` and the
+# values in `fields` went straight to the DB and the constraint rejection
+# surfaced as an unhandled 500, while screen_key in the very same request body
+# was already checked properly. Kept as module constants because the override
+# path below needs exactly the same two vocabularies.
+_SCREEN_MODES = ("none", "full", "view", "view_team", "own", "team")
+_FIELD_MODES = ("show", "read", "mask", "hide")
+
+# What a UserPermissionOverride.override_value is allowed to be, per layer —
+# derived from what app/rbac/resolver.py actually DOES with it, which is the
+# only definition that exists: L1/L4 assign it straight to the effective screen
+# mode, L2 compares it to "allow" (anything else revokes the action), L3 assigns
+# it straight to the field mode. Unvalidated, a junk L1/L4 value became the
+# user's effective screen mode verbatim — a fail-open, since most downstream
+# visibility checks ask "is this != none" rather than "is this a real mode".
+_OVERRIDE_VALUES_BY_LAYER: dict[str, tuple[str, ...]] = {
+    "L1": _SCREEN_MODES,
+    "L2": ("allow", "deny"),
+    "L3": _FIELD_MODES,
+    "L4": _SCREEN_MODES,
+}
+
 
 async def _role_by_code(db: AsyncSession, role_code: str) -> Role:
     role = (await db.execute(select(Role).where(Role.code == role_code))).scalar_one_or_none()
@@ -191,11 +217,53 @@ async def save_matrix(
 ) -> list[MatrixModuleState]:
     role = await _role_by_code(db, role_code)
     screens_by_key = {s.screen_key: s for s in (await db.execute(select(Screen))).scalars().all()}
+    # The registry of what each screen actually HAS — the same two tables
+    # create_override() below already validates action_key/field_key against.
+    # One query each for the whole request rather than one per change, since a
+    # matrix save is normally a whole screen's worth of edits at once.
+    actions_by_screen_id: dict[str, set[str]] = {}
+    for a in (await db.execute(select(ScreenAction))).scalars().all():
+        actions_by_screen_id.setdefault(a.screen_id, set()).add(a.action_key)
+    fields_by_screen_id: dict[str, set[str]] = {}
+    for f in (await db.execute(select(ScreenSensitiveField))).scalars().all():
+        fields_by_screen_id.setdefault(f.screen_id, set()).add(f.field_key)
 
     for change in body.changes:
         screen = screens_by_key.get(change.screen_key)
         if screen is None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Unknown screen '{change.screen_key}'")
+
+        # Validate the whole change up front, before anything is staged on the
+        # session — an unknown action_key/field_key used to be persisted as a
+        # brand new permission row that GET /rbac/matrix (which lists the
+        # SCREEN's actions/fields, not the stored rows) could never show again,
+        # so an operator typo created unreachable, un-removable grants.
+        if change.mode is not None and change.mode not in _SCREEN_MODES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown mode '{change.mode}' — must be one of {', '.join(_SCREEN_MODES)}",
+            )
+        if change.actions:
+            valid_actions = actions_by_screen_id.get(screen.id, set())
+            for action_key in change.actions:
+                if action_key not in valid_actions:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"'{action_key}' is not a real action on screen '{change.screen_key}'",
+                    )
+        if change.fields:
+            valid_fields = fields_by_screen_id.get(screen.id, set())
+            for field_key, field_mode in change.fields.items():
+                if field_key not in valid_fields:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"'{field_key}' is not a sensitive field on screen '{change.screen_key}'",
+                    )
+                if field_mode not in _FIELD_MODES:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=f"Unknown field mode '{field_mode}' for '{field_key}' — must be one of {', '.join(_FIELD_MODES)}",
+                    )
 
         # §3.2 guardrail: "Super Admin cannot remove its own access to the RBAC
         # screens — the system must refuse to produce a state with no one able
@@ -394,6 +462,16 @@ async def create_override(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"'{body.field_key}' is not a sensitive field on this screen")
     if not body.reason.strip():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Reason is required")
+    # override_value is the one field on this body that was reaching the DB
+    # unchecked (the column is a bare VARCHAR(20) with no CHECK, unlike layer's
+    # ck_upo_layer). The resolver assigns an L1/L4 value straight to the
+    # effective screen mode, so junk here became the user's mode verbatim.
+    allowed_values = _OVERRIDE_VALUES_BY_LAYER[body.layer]
+    if body.override_value not in allowed_values:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"'{body.override_value}' is not a valid {body.layer} override value — must be one of {', '.join(allowed_values)}",
+        )
 
     row = UserPermissionOverride(
         id=str(uuid.uuid4()), user_id=body.user_id, screen_id=screen.id, layer=body.layer, action_key=body.action_key,
@@ -557,6 +635,17 @@ async def update_toggles(
         # value," so a plain enabled-flip (which never includes this key)
         # can't accidentally null out Expense's stored threshold amount.
         numeric_changed = "numeric_value" in change.model_fields_set and change.numeric_value != row.numeric_value
+        # Every toggle that carries a number today carries a MONEY AMOUNT
+        # (Expense §6.1's auto-approval threshold is the only one), and there is
+        # no toggle in the registry for which a negative companion value means
+        # anything. Rejected rather than stored: a negative threshold silently
+        # changes which expenses auto-approve, with no UI that could show it as
+        # wrong.
+        if change.numeric_value is not None and change.numeric_value < 0:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"numeric_value for '{change.toggle_key}' cannot be negative",
+            )
         if change.enabled == row.enabled and not numeric_changed:
             continue
         old_enabled, old_numeric = row.enabled, row.numeric_value

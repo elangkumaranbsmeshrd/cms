@@ -6,7 +6,7 @@ Employee get read-only ('view'), HR/Super Admin get the authoring surface
 import logging
 import uuid
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import or_, select
@@ -74,7 +74,13 @@ async def list_announcements(
     if posted_on_from:
         stmt = stmt.where(Announcement.published_at >= posted_on_from)
     if posted_on_to:
-        stmt = stmt.where(Announcement.published_at <= posted_on_to)
+        # published_at is DATETIME(6); MySQL coerces a bare date to midnight,
+        # so `<= posted_on_to` silently excluded everything posted ON the day
+        # the user named (found live: a feed published at 06:50 on 26 Aug was
+        # invisible to posted_on_to=2026-08-26 and only appeared under
+        # posted_on_to=2026-08-27). Half-open upper bound instead — the whole
+        # named day is inside the range, DST/leap-second free.
+        stmt = stmt.where(Announcement.published_at < posted_on_to + timedelta(days=1))
     rows = (await db.execute(stmt.order_by(Announcement.created_at.desc()))).scalars().all()
 
     if format:
@@ -106,7 +112,17 @@ async def create_announcement(
         created_by=current_user.id, updated_by=current_user.id,
     )
     db.add(row)
-    await db.flush()
+    # This flush IS the announcement INSERT, so anything the table's own
+    # CHECKs reject (ck_ann_title / ck_ann_message / ck_ann_scope) surfaces
+    # here, before the try/except around the commit below could ever see it.
+    # target_scope and blank title/message are now caught earlier still, by
+    # AnnouncementCreate, but an unknown department_id in the loop below and
+    # any future constraint still land on this handler rather than as a 500.
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
     for dept_id in body.department_ids:
         db.add(AnnouncementTarget(id=str(uuid.uuid4()), announcement_id=row.id, department_id=dept_id, created_by=current_user.id, updated_by=current_user.id))
     try:

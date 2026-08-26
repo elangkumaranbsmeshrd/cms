@@ -217,6 +217,14 @@ async def set_primary_address(
     target = await db.get(CompanyAddress, address_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not target.is_active:
+        # Without this an inactive address could be promoted to Primary, which
+        # demoted the live REGISTERED_OFFICE primary and left the company with
+        # a primary address that list screens show as Inactive. Unlike Bank
+        # Account's default there is no DB guard here at all, so both
+        # directions into the primary+inactive state have to be closed in this
+        # file: here, and in deactivate_address below.
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Activate this address before making it the primary one")
     # Masters §3.6b: "marking a new one automatically un-marks the previous
     # one." MySQL forbids a trigger from updating the same table it fires on,
     # so this swap lives here — unset-then-set, same pattern as Bank Account's
@@ -244,7 +252,38 @@ async def deactivate_address(
     row = await db.get(CompanyAddress, address_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if row.is_primary:
+        # Same invariant Bank Account states as "Choose a new default account
+        # before deactivating this one" — the company must not be left with a
+        # Primary address that is Inactive. Bank Account has both an API check
+        # and a DB trigger; company_addresses has neither, so this is the only
+        # thing standing between a deactivate and that state.
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Choose a new primary address before deactivating this one")
     row.is_active = False
+    row.updated_by = current_user.id
+    await db.commit()
+    await db.refresh(row)
+    return apply_field_masking(CompanyAddressOut.model_validate(row).model_dump(), perms)
+
+
+@router.post("/addresses/{address_id}/activate", response_model=None)
+async def activate_address(
+    address_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(SCREEN, action="edit")),
+) -> dict:
+    """deactivate_address had no counterpart: CompanyAddressWrite carries no
+    is_active field, so an address deactivated by mistake could never be
+    brought back through the API. That also made set-primary's new is_active
+    guard a dead end. Same shape and permission action as deactivate_address,
+    matching the deactivate/activate pairs in masters_tax_schemes.py and
+    vendors.py.
+    """
+    row = await db.get(CompanyAddress, address_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    row.is_active = True
     row.updated_by = current_user.id
     await db.commit()
     await db.refresh(row)

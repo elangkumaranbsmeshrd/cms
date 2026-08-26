@@ -84,8 +84,22 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     the frontend field's own hint claimed blank was a valid, working choice;
     ck_tax_heads_slab disagrees and always has) — was a raw 500, not a clean
     error a form could show next to the field that caused it.
+
+    The one collision worth naming outright is ux_tax_heads_scope_name: it is
+    by far the most common rejection here (every Duplicate of a head under its
+    own name hits it), and the generic fallback sends the reader off to check
+    "the figures required for this Tax Type", which is not what went wrong.
+    MySQL puts the key name in the 1062 text, so keying off it needs no
+    pre-flight SELECT and — unlike a Python-side uniqueness check — stops
+    firing on its own the day the index is redefined to include a date
+    component, instead of freezing today's schema limitation into the router.
     """
     logger.warning("db constraint violation: %s", exc.orig)
+    if "ux_tax_heads_scope_name" in str(exc.orig):
+        return HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="A tax head with this Tax Name already exists in this Scope — the schema allows only one head per Scope + Tax Name, with no date component, so a new dated version cannot reuse the name. Give this version a distinct Tax Name.",
+        )
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 
 # Percentages/counts stay RIGHT-aligned, money stays LEFT-aligned — this
@@ -603,6 +617,25 @@ async def calculate(
     head = await db.get(TaxHead, body.tax_head_id)
     if head is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    # Found live, this pass: TaxCalculationRequest has declared `as_of` since
+    # it was written and this handler never read it, so "what is this tax on
+    # this date" answered with the head's figures whatever the date — a head
+    # whose window closed on 2026-05-01 happily returned 12% for 2026-12-01
+    # and for 1999-01-01. A silently ignored date on a tax calculator is a
+    # wrong number, not a missing feature. This is the same in-force guard
+    # tax_head_lookup.validate_head_usable applies to Invoice / Purchase Bill
+    # / Expense tax lines, raised exactly the way those three routers raise
+    # it (422 + the reason string). Only the date window is checked, not
+    # scope or is_active, because this endpoint is the Add Tax form's live
+    # worked example: it must still preview a head that is deactivated, or
+    # one whose Scope is mid-edit in the form beside it. Omitting as_of keeps
+    # the unconditional preview that same form relies on.
+    if body.as_of is not None and (head.applies_from > body.as_of or (head.applies_until is not None and head.applies_until < body.as_of)):
+        window = f"{head.applies_from.isoformat()} to {head.applies_until.isoformat() if head.applies_until is not None else 'open-ended'}"
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Tax head '{head.tax_name}' is not in force on {body.as_of.isoformat()} (in force {window})",
+        )
     bands, components, reliefs, _directions = await _load_children(db, head.id)
     snapshot = _snapshot_from_row(head, bands, components, reliefs)
     result = tax_engine.calculate_tax(snapshot, body.base_amount)

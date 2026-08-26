@@ -56,7 +56,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.compliance import Remittance, RemittanceAllocation
-from app.models.finance import PurchaseBill
+from app.models.finance import PurchaseBill, PurchaseBillPayment
 from app.models.masters import PayCycle, TaxHead, TaxHeadWithholdingDirection
 from app.models.payroll import Payslip, PayslipStatutoryLine
 
@@ -252,12 +252,46 @@ async def _liability_heads(db: AsyncSession, tax_head_id: str | None) -> list[tu
 async def _source_amounts_for_head(db: AsyncSession, head: TaxHead, source_type: str) -> list[SourceAmount]:
     if source_type == "PURCHASE_BILL":
         bills = (await db.execute(select(PurchaseBill).where(PurchaseBill.withholding_tax_head_id == head.id, PurchaseBill.withholding_amount > 0))).scalars().all()
+        if not bills:
+            return []
+        # A PAYMENT_DATE head's statutory period must come from the date the
+        # user says the money actually moved, NOT from purchase_bills.paid_at.
+        # paid_at is a server wall-clock audit stamp written at the moment the
+        # final payment row was INSERTED (purchase_bills.py record_payment), so
+        # a back-dated payment — the normal case when yesterday's bank
+        # transfer is keyed in today — was landing in the period the data
+        # entry happened in rather than the period the payment happened in.
+        # That gave the wrong deposit due date, hid genuinely overdue
+        # liabilities (every new payment always fell in the current period, so
+        # overdue_remittances/due_within_7_days could effectively never fire),
+        # and made documents_in_period() below invisible in their own real
+        # period, which in turn made a correctly-dated remittance impossible
+        # to record against them.
+        #
+        # The event is the payment that SETTLED the bill, so the entered date
+        # of the latest non-reversed payment row is the direct equivalent of
+        # what paid_at was standing in for — same "liability arises when the
+        # bill is fully paid" semantics, user dates instead of clock dates.
+        # paid_at stays as the fallback for any bill with no surviving payment
+        # rows, and stays the "has it been paid at all yet" gate.
+        settled_on: dict[str, date] = {}
+        if head.liability_arises_on == "PAYMENT_DATE":
+            for bill_id, pay_date in (
+                await db.execute(
+                    select(PurchaseBillPayment.purchase_bill_id, PurchaseBillPayment.payment_date).where(
+                        PurchaseBillPayment.purchase_bill_id.in_([b.id for b in bills]),
+                        PurchaseBillPayment.status == "RECORDED",
+                    )
+                )
+            ).all():
+                if bill_id not in settled_on or pay_date > settled_on[bill_id]:
+                    settled_on[bill_id] = pay_date
         out = []
         for b in bills:
             if head.liability_arises_on == "PAYMENT_DATE":
                 if b.paid_at is None:
                     continue  # not yet paid -> the liability hasn't arisen yet under this head's own rule
-                event_date = b.paid_at.date()
+                event_date = settled_on.get(b.id) or b.paid_at.date()
             else:
                 event_date = b.bill_date
             out.append(SourceAmount(

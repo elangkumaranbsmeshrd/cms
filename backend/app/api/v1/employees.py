@@ -242,7 +242,18 @@ async def create_employee(
         **body.model_dump(),
     )
     db.add(row)
-    await db.flush()
+    # This flush IS the employee INSERT — a duplicate email or a stale
+    # department/designation/employment-type/manager/work-location id is
+    # rejected right here, not at commit, so it has to be guarded on its own
+    # or the IntegrityError escapes as a bare 500 and never reaches the
+    # handler on the commit below (found live: every FK violation and every
+    # duplicate email 500'd, while the identical violations through PUT
+    # /employees/{id} — which has no flush — returned a clean 409).
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Duplicate email/code or invalid reference") from exc
 
     # Leave §2.3: "New employee starting balance — automatic, not a button."
     # Found missing entirely by the Phase 2 audit — leave_requests.py's
@@ -715,7 +726,17 @@ async def add_emergency_contact(
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(MASTER_RECORD, action="edit")),
 ) -> dict:
+    if await db.get(Employee, employee_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
     await org_scope.assert_employee_in_scope(db, current_user, perms, employee_id)
+    # relationship / contact_phone / contact_name are validated by
+    # EmergencyContactWrite against this table's own CHECK constraints
+    # (ck_eec_relationship / ck_eec_phone / ck_eec_name), so a bad value is a
+    # 422 naming the offending field. That leaves ux_eec_primary as the only
+    # violation that can still reach the handler below — which is what its
+    # message has always claimed, and previously wasn't: every CHECK
+    # rejection collapsed into the same misleading "Only one contact may be
+    # marked Primary" sentence.
     row = EmployeeEmergencyContact(
         id=str(uuid.uuid4()), employee_id=employee_id, created_by=current_user.id, updated_by=current_user.id, **body.model_dump()
     )

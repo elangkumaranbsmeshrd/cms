@@ -483,14 +483,21 @@ async def reissue_payslip(
         payslip.unpaid_leave_days = run_employee.unpaid_leave_days
         payslip.lop_days = run_employee.lop_days
     elif body.reissue_method == "MANUAL_ADJUSTMENT":
+        # ReissueRequest._manual_figures_must_reconcile (schemas/payroll.py)
+        # has already guaranteed that the three figures below were supplied
+        # together, are non-negative, and satisfy the same
+        # net = earnings - deductions identity payroll_run_employees.net_pay
+        # is a GENERATED column of — so this can no longer persist a payslip
+        # whose stated Net Pay bears no relation to its own earnings and
+        # deductions. gross_pay does not participate in that identity (it is
+        # the structure's monthly gross, which ad-hoc additions legitimately
+        # sit above), so it stays optional — bounded to >= 0 by the same
+        # validator.
         if body.manual_gross_pay is not None:
             payslip.gross_pay = body.manual_gross_pay
-        if body.manual_total_earnings is not None:
-            payslip.total_earnings = body.manual_total_earnings
-        if body.manual_total_deductions is not None:
-            payslip.total_deductions = body.manual_total_deductions
-        if body.manual_net_pay is not None:
-            payslip.net_pay = body.manual_net_pay
+        payslip.total_earnings = body.manual_total_earnings
+        payslip.total_deductions = body.manual_total_deductions
+        payslip.net_pay = body.manual_net_pay
     else:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="reissue_method must be RECALCULATED or MANUAL_ADJUSTMENT")
 

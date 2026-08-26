@@ -13,6 +13,9 @@ letterhead, company details and formatting from Company Profile."
 
 from __future__ import annotations
 
+import logging
+import os
+import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
 from io import BytesIO
@@ -23,16 +26,143 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.models.masters import CompanyProfile
 from app.services import file_storage
 
+_log = logging.getLogger(__name__)
+
+RUPEE = "\u20b9"
+
+# ---------------------------------------------------------------------------
+# Fonts. reportlab's base-14 fonts (Helvetica & friends) are Type1 fonts under
+# WinAnsiEncoding, whose glyph set predates U+20B9 INDIAN RUPEE SIGN entirely.
+# reportlab does NOT raise on a missing glyph — it maps the unknown codepoint
+# through its WinAnsi table and silently emits whatever byte falls out, which
+# for U+20B9 is 0x6E, the letter "n". Every money amount in a generated
+# Invoice / Payslip / Salary Certificate / Offer Letter PDF therefore printed
+# "n45,000.00", on documents that get emailed to customers and employees.
+#
+# Fix, in two layers:
+#   1. Register a real Unicode TrueType face if the host has one, and use it
+#      for every Paragraph and every table cell. Then U+20B9 is embedded as a
+#      genuine glyph and the PDF says "₹45,000.00".
+#   2. If the host has no such face (python:3.12-slim, for instance, ships no
+#      fonts at all), degrade to a *readable* transliteration — "Rs 45,000.00"
+#      — instead of a silently wrong letter. Layer 2 also catches every other
+#      non-WinAnsi character that can reach a PDF through user-authored data
+#      (smart quotes pasted from Word, an en dash in a customer name, ...),
+#      which had the same silent-substitution problem.
+# Candidates are probed in order and only accepted if the face actually
+# carries a U+20B9 glyph, so a font that merely exists can't re-introduce the
+# bug. MESHRD_PDF_FONT / MESHRD_PDF_FONT_BOLD let a deployment point at a
+# face outside the standard locations without a code change.
+# ---------------------------------------------------------------------------
+_UNICODE_FONT_CANDIDATES: tuple[tuple[str, str, str], ...] = (
+    ("MeshrdPdfSans", os.environ.get("MESHRD_PDF_FONT", ""), os.environ.get("MESHRD_PDF_FONT_BOLD", "")),
+    ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ("DejaVuSans", "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
+    ("NotoSans", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"),
+    ("LiberationSans", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+    ("WinArial", "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
+    ("WinSegoeUI", "C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf"),
+    ("MacArial", "/Library/Fonts/Arial.ttf", "/Library/Fonts/Arial Bold.ttf"),
+)
+
+
+def _register_unicode_font() -> tuple[str, str] | None:
+    """Return (regular_font_name, bold_font_name) for the first candidate that
+    exists, parses, and really has the rupee glyph. None => no Unicode face on
+    this host, fall back to Helvetica + transliteration.
+    """
+    for family, regular_path, bold_path in _UNICODE_FONT_CANDIDATES:
+        if not regular_path or not os.path.isfile(regular_path):
+            continue
+        try:
+            face = TTFont(family, regular_path)
+            if face.face.charToGlyph.get(ord(RUPEE), 0) == 0:
+                continue  # exists but can't draw ₹ — no better than Helvetica
+            pdfmetrics.registerFont(face)
+        except Exception:  # unreadable/unsupported TTF — try the next one
+            continue
+        bold_name = family
+        if bold_path and os.path.isfile(bold_path):
+            try:
+                pdfmetrics.registerFont(TTFont(f"{family}-Bold", bold_path))
+                bold_name = f"{family}-Bold"
+            except Exception:
+                bold_name = family
+        pdfmetrics.registerFontFamily(family, normal=family, bold=bold_name, italic=family, boldItalic=bold_name)
+        return family, bold_name
+    return None
+
+
+_resolved_font = _register_unicode_font()
+_UNICODE_FONT_OK = _resolved_font is not None
+_FONT_REGULAR, _FONT_BOLD = _resolved_font or ("Helvetica", "Helvetica-Bold")
+if not _UNICODE_FONT_OK:
+    _log.warning(
+        "pdf_engine: no Unicode TrueType face found on this host; generated PDFs will "
+        "transliterate ₹ to 'Rs' and other non-WinAnsi characters to their closest ASCII "
+        "form. Install a Unicode font (e.g. fonts-dejavu-core) or set MESHRD_PDF_FONT."
+    )
+
+# Characters that carry meaning we must not lose when the Unicode face is
+# missing. Anything not listed here falls through to an NFKD/ASCII reduction.
+_ASCII_FALLBACKS = {
+    "\u20b9": "Rs ",  # ₹ INDIAN RUPEE SIGN
+    "\u20a8": "Rs ",  # ₨ RUPEE SIGN
+    "\u20ac": "EUR ",  # € (in WinAnsi, but keep the mapping honest if it isn't)
+    "\u2060": "",
+    "\ufeff": "",
+}
+
+
+def _to_winansi(text: str) -> str:
+    """Reduce `text` to characters Helvetica/WinAnsiEncoding can actually draw."""
+    try:
+        text.encode("cp1252")
+        return text
+    except UnicodeEncodeError:
+        pass
+    out: list[str] = []
+    for ch in text:
+        try:
+            ch.encode("cp1252")
+            out.append(ch)
+            continue
+        except UnicodeEncodeError:
+            pass
+        sub = _ASCII_FALLBACKS.get(ch)
+        if sub is None:
+            stripped = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+            try:
+                stripped.encode("cp1252")
+            except UnicodeEncodeError:
+                stripped = ""
+            sub = stripped or "?"
+        out.append(sub)
+    return "".join(out)
+
+
+def _pdf_text(value: Any) -> str:
+    """Every string that reaches a Paragraph or a table cell goes through here,
+    so the font decision is made in exactly one place.
+    """
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else str(value)
+    return text if _UNICODE_FONT_OK else _to_winansi(text)
+
+
 _STYLES = getSampleStyleSheet()
-_TITLE = ParagraphStyle("MeshrdTitle", parent=_STYLES["Title"], fontSize=16, spaceAfter=4)
-_SUBTLE = ParagraphStyle("MeshrdSubtle", parent=_STYLES["Normal"], fontSize=8, textColor=colors.HexColor("#666666"))
-_SECTION = ParagraphStyle("MeshrdSection", parent=_STYLES["Heading3"], fontSize=11, spaceBefore=10, spaceAfter=4)
-_BODY = _STYLES["Normal"]
+_TITLE = ParagraphStyle("MeshrdTitle", parent=_STYLES["Title"], fontName=_FONT_BOLD, fontSize=16, spaceAfter=4)
+_SUBTLE = ParagraphStyle("MeshrdSubtle", parent=_STYLES["Normal"], fontName=_FONT_REGULAR, fontSize=8, textColor=colors.HexColor("#666666"))
+_SECTION = ParagraphStyle("MeshrdSection", parent=_STYLES["Heading3"], fontName=_FONT_BOLD, fontSize=11, spaceBefore=10, spaceAfter=4)
+_BODY = ParagraphStyle("MeshrdBody", parent=_STYLES["Normal"], fontName=_FONT_REGULAR)
 _INK = colors.HexColor("#1a1a2e")
 _HAIRLINE = colors.HexColor("#dddddd")
 
@@ -55,9 +185,7 @@ def _esc(text: Any) -> str:
     (plain strings, never wrapped in Paragraph) don't need this — only
     Paragraph() call sites do.
     """
-    if text is None:
-        return ""
-    return _xml_escape(str(text))
+    return _xml_escape(_pdf_text(text))
 
 
 def _letterhead_flowables(company: CompanyProfile | None) -> list:
@@ -81,6 +209,10 @@ def _letterhead_flowables(company: CompanyProfile | None) -> list:
 
 
 def _money(v: Any) -> str:
+    # NOTE — the ₹ *glyph* problem (it used to print as the letter "n") is
+    # fixed at the font layer above; what remains below is the separate,
+    # still-open question of which currency a deployment should format in.
+    #
     # QUEUED — §6 flags this ₹ literal as hardcoded currency/locale. Not
     # fixed here because there is nothing real to read it from yet:
     # CompanyProfile (backend/app/models/masters.py:286 `class
@@ -106,7 +238,7 @@ def _money(v: Any) -> str:
     if v is None:
         return ""
     if isinstance(v, Decimal):
-        return f"₹{v:,.2f}"
+        return f"{RUPEE}{v:,.2f}"
     return str(v)
 
 
@@ -132,15 +264,17 @@ def render_table_pdf(
     def _cell(v: Any) -> str:
         if v is None:
             return ""
-        return _money(v) if isinstance(v, Decimal) else str(v)
+        return _pdf_text(_money(v) if isinstance(v, Decimal) else v)
 
-    header = [c.label for c in columns]
+    header = [_pdf_text(c.label) for c in columns]
     data = [header] + [[_cell(row.get(c.key)) for c in columns] for row in rows]
 
     table = Table(data, repeatRows=1)
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), _INK),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, -1), _FONT_REGULAR),
+        ("FONTNAME", (0, 0), (-1, 0), _FONT_BOLD),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("GRID", (0, 0), (-1, -1), 0.5, _HAIRLINE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -175,9 +309,10 @@ def render_document_pdf(title: str, company: CompanyProfile | None, sections: li
     for heading, rows in sections:
         if heading:
             flow.append(Paragraph(_esc(heading), _SECTION))
-        data = [[label, value] for label, value in rows]
+        data = [[_pdf_text(label), _pdf_text(value)] for label, value in rows]
         t = Table(data, colWidths=[60 * mm, None])
         t.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), _FONT_REGULAR),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#555555")),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),

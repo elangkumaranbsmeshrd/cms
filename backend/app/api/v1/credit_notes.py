@@ -182,7 +182,17 @@ async def create_credit_note(
         created_by=current_user.id, updated_by=current_user.id,
     )
     db.add(row)
-    await db.flush()
+    # Guarded, not a bare flush: _build_line_item_rows below issues its own
+    # queries, and SQLAlchemy's autoflush would otherwise emit this INSERT
+    # from inside one of them — outside the commit-time DBAPIError guard, so
+    # a constraint rejection escaped the endpoint as a 500 instead of the
+    # 409 every other write in this module answers with. Flushing here puts
+    # that INSERT back inside a guard.
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
 
     for line in await _build_line_item_rows(db, invoice.id, body.line_items_affected, body.credit_amount):
         db.add(CreditNoteLineItem(id=str(uuid.uuid4()), credit_note_id=row.id, created_by=current_user.id, updated_by=current_user.id, **line))
@@ -227,6 +237,14 @@ async def update_credit_note(
     row.reason_detail = body.reason_detail
     row.credit_amount = body.credit_amount
     row.updated_by = current_user.id
+    # Same reason as create's guarded flush: the SELECT below would autoflush
+    # this UPDATE outside the commit-time guard, turning a constraint
+    # rejection into a 500.
+    try:
+        await db.flush()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
 
     for line in (await db.execute(select(CreditNoteLineItem).where(CreditNoteLineItem.credit_note_id == row.id))).scalars():
         await db.delete(line)

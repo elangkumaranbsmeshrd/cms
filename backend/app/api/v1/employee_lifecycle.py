@@ -106,6 +106,31 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 
 
+# A resignation is "live" — its exit checklist, its acceptance letter and its
+# final settlement are all actionable — only while it holds one of these.
+# WITHDRAWN and COMPLETED are both terminal.
+OPEN_RESIGNATION_STATUSES = ("SUBMITTED", "MANAGER_ACKNOWLEDGED", "HR_PROCESSING")
+
+
+def _assert_not_withdrawn(resignation: Resignation) -> None:
+    """Every offboarding action downstream of the resignation itself has to
+    re-check the parent, not just its own row's status. Found live: after
+    POST /resignations/{id}/withdraw, HR could still generate and send the
+    Resignation Acceptance Letter, tick every exit checklist step DONE and
+    drive the final settlement NOT_DUE -> DUE -> PAID, because withdraw only
+    flipped resignations.status and each downstream handler looked no
+    further than `step.status == 'OPEN'` / `final_settlement_status ==
+    'DUE'`. Only the very last hop (employment_status -> EXITED) was
+    protected, by trg_employees_guard_exit_transition in the DB.
+
+    Deliberately narrow — WITHDRAWN only, not "any terminal status": a final
+    settlement is routinely paid after the employee has already exited and
+    the resignation reads COMPLETED, so that case must keep working.
+    """
+    if resignation.status == "WITHDRAWN":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This resignation has been withdrawn — its exit workflow is closed")
+
+
 # =============================================================== ONBOARDING
 @router.get("/employees/{employee_id}/onboarding", response_model=list[OnboardingItemOut])
 async def list_onboarding_items(
@@ -284,16 +309,10 @@ async def send_welcome_email(
     item.status = "COMPLETE"
     item.completed_by = current_user.id
     item.updated_by = current_user.id
-    await db.commit()
-    await db.refresh(item)
 
-    await email_transport.send_templated_email(
-        db, "welcome_email", employee.email, {"first_name": employee.first_name},
-        related_record_type="employee", related_record_id=employee.id,
-    )
     # notify()'s title/body below are literal strings it just persists as-is
     # (app/services/notify.py has no Masters-driven source to resolve
-    # against) — unlike send_templated_email() two lines up, which reads
+    # against) — unlike send_templated_email() further down, which reads
     # Masters -> Email Templates. Invariant 12 (email_transport.py's
     # docstring; masters_email_config.py:201) already establishes that
     # disabling an EmailTemplate silences only the email side, never this
@@ -310,14 +329,35 @@ async def send_welcome_email(
     # IS fixed here in the meantime: the company name is no longer a literal
     # ("Meshrd") — it now reads CompanyProfile.legal_name, same singleton row
     # pdf_engine.company_logo_bytes() reads elsewhere in this file.
+    #
+    # notification_type is 'ONBOARDING', not 'EMPLOYEE': notifications.
+    # ck_notif_type has no 'EMPLOYEE' member, so the row this call adds used
+    # to be rejected by the CHECK on an UNGUARDED second commit that ran
+    # AFTER the checklist item had already been committed COMPLETE — HR got
+    # a 500 on an action that had actually run, the step was stuck COMPLETE
+    # (409 on every retry), and the in-app notification was never created.
+    # This whole endpoint is one onboarding step, so it now writes the item,
+    # the employee stamp and the notification in a SINGLE commit — either
+    # all of it lands or none of it does — and the email dispatches only
+    # after that commit succeeds.
     company = (await db.execute(select(CompanyProfile))).scalar_one_or_none()
     notify(
-        db, recipient_user_id=employee.user_id, notification_type="EMPLOYEE",
+        db, recipient_user_id=employee.user_id, notification_type="ONBOARDING",
         title=f"Welcome to {company.legal_name if company else 'the company'}",
         body=f"Welcome aboard, {employee.first_name}! Your onboarding has begun.",
         source_module="employee", source_record_id=employee.id, actor_user_id=current_user.id,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "Rejected by a database constraint") from exc
+    await db.refresh(item)
+
+    await email_transport.send_templated_email(
+        db, "welcome_email", employee.email, {"first_name": employee.first_name},
+        related_record_type="employee", related_record_id=employee.id,
+    )
 
     return item
 
@@ -475,6 +515,7 @@ async def mark_settlement_paid(
     row = await db.get(Resignation, resignation_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _assert_not_withdrawn(row)
     if row.final_settlement_status != "DUE":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Settlement must be marked Due first (complete the exit checklist's settlement step)")
     row.final_settlement_status = "PAID"
@@ -507,6 +548,17 @@ async def withdraw_resignation(
     if employee.employment_status == "ON_NOTICE":
         employee.employment_status = "ACTIVE"
         employee.updated_by = current_user.id
+    # Stand the exit checklist down with the resignation. Anything still
+    # OPEN goes back to LOCKED so it stops presenting itself as actionable
+    # work on a resignation the employee retracted; steps already DONE are
+    # left alone (they are history, and trg_ecs_enforce_gate forbids moving
+    # a DONE step backwards anyway). The status guard in complete_exit_step
+    # is the real enforcement — this is what HR's screen reads.
+    await db.execute(
+        update(ExitChecklistStep)
+        .where(ExitChecklistStep.resignation_id == resignation_id, ExitChecklistStep.status == "OPEN")
+        .values(status="LOCKED")
+    )
     await db.commit()
     await db.refresh(row)
     return row
@@ -569,6 +621,7 @@ async def complete_exit_step(
     step = await db.get(ExitChecklistStep, step_id)
     if step is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    _assert_not_withdrawn(await db.get(Resignation, step.resignation_id))
     if step.status != "OPEN":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="This step is not open")
 
@@ -729,8 +782,14 @@ async def create_offer_letter(
     employee = await db.get(Employee, employee_id)
     if employee is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    if body.letter_type == "RESIGNATION_ACCEPTANCE_LETTER" and (body.resignation_id is None or body.last_working_day_snapshot is None):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A Resignation Acceptance Letter needs its resignation_id and last_working_day_snapshot")
+    if body.letter_type == "RESIGNATION_ACCEPTANCE_LETTER":
+        if body.resignation_id is None or body.last_working_day_snapshot is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A Resignation Acceptance Letter needs its resignation_id and last_working_day_snapshot")
+        resignation_for_letter = await db.get(Resignation, body.resignation_id)
+        if resignation_for_letter is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Resignation not found")
+        # You cannot accept a resignation that has been retracted.
+        _assert_not_withdrawn(resignation_for_letter)
 
     department = await db.get(Department, employee.department_id)
     designation = await db.get(Designation, employee.designation_id)
