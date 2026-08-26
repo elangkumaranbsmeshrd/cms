@@ -49,7 +49,7 @@ const config: ListScreenConfig<PayslipListRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
     },
     { key: 'period_month', label: 'Month', kind: 'numberrange', transport: 'server', allLabel: 'All Months', param: 'period_month' },
     {
@@ -69,7 +69,7 @@ const config: ListScreenConfig<PayslipListRow> = {
   ],
   columns: [
     { key: 'period_month', header: 'Pay Period', compute: (row) => `${MONTH_NAMES[row.period_month]} ${row.period_year}` },
-    { key: 'financial_year_id', header: 'Financial Year', ref: { endpoint: '/masters/financial-years', labelKey: 'label' } },
+    { key: 'financial_year_id', header: 'Financial Year', ref: { endpoint: '/masters/financial-years/options', labelKey: 'label' } },
     { key: 'net_pay', header: 'Net Pay', type: 'money' },
     { key: 'generated_at', header: 'Date Processed', type: 'date' },
     { key: 'status', header: 'Status', type: 'status', staticOptions: STATUS_OPTIONS },

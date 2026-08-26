@@ -19,7 +19,7 @@ interface HsnSacRow extends HsnSacCodeRow {
 // §3.11: the link is "to a real, editable tax head — never a fixed label", so
 // the label comes from the Taxes endpoint itself. TaxHead's identifying field
 // is tax_name, not the `name` RefDataService defaults to.
-const TAX_HEAD_REF = { endpoint: '/masters/taxes', labelKey: 'tax_name' };
+const TAX_HEAD_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
 
 // The stored values are the two-letter codes the column is typed for
 // (hsn_sac_codes.code_type is String(3)); the labels are the prototype's own

@@ -61,7 +61,7 @@ const config: ListScreenConfig<CompHoursApprovalRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'department_id',
@@ -69,7 +69,7 @@ const config: ListScreenConfig<CompHoursApprovalRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Departments',
-      optionsRef: { endpoint: '/masters/departments' },
+      optionsRef: { endpoint: '/masters/departments/options', labelKey: 'label' },
     },
     {
       key: 'status',
@@ -85,13 +85,13 @@ const config: ListScreenConfig<CompHoursApprovalRow> = {
       kind: 'select',
       transport: 'client',
       allLabel: 'All Financial Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
       predicate: (row, v) => row.financial_year_id === v,
     },
   ],
   columns: [
     { key: 'request_number', header: 'Request #', type: 'code' },
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'shortfall_date', header: 'Shortfall Date', type: 'date' },
     { key: 'hours_short', header: 'Hours Short', type: 'number' },
     { key: 'make_up_date', header: 'Make-Up Date', type: 'date' },

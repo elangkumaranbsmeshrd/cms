@@ -35,7 +35,7 @@ const REQUEST_TYPE_OPTIONS = [
   { value: 'RETURN', label: 'Return' },
 ];
 
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 
 /** §2.10 My Assets (employee.my_assets) — assigned-assets list (with
  * Category/Status filters, Status column) + Raise Request form + request

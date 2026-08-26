@@ -352,7 +352,7 @@ export class MyLeaveComponent implements OnInit {
       next: (rows) => this.leaveTypes.set(rows),
       error: () => this.leaveTypes.set([]),
     });
-    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows),
       error: () => this.financialYears.set([]),
     });

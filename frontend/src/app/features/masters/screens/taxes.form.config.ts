@@ -148,9 +148,9 @@ const fields: readonly FieldConfig<TaxHeadRow>[] = [
     key: 'tax_scheme_id',
     label: 'Tax Scheme',
     type: 'select',
-    ref: { endpoint: '/masters/tax-schemes', labelKey: 'scheme_name' },
+    ref: { endpoint: '/masters/tax-schemes/options', labelKey: 'label' },
     visibleWhen: whenScope('PAYROLL_INCOME_TAX', 'EMPLOYEE_DECLARATION'),
-    hideWhenRefEmpty: { endpoint: '/masters/tax-schemes', labelKey: 'scheme_name' },
+    hideWhenRefEmpty: { endpoint: '/masters/tax-schemes/options', labelKey: 'label' },
     hint: 'Which alternative regime this declaration head belongs to (Masters → Taxes → Tax Schemes). Hidden entirely while none are configured — §3.2d: zero schemes is a valid, common state, not a broken screen.',
   },
   {

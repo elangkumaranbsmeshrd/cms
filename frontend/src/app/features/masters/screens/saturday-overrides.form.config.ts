@@ -6,8 +6,8 @@ const OVERRIDE_TO_OPTIONS = [
   { value: 'WORKING', label: 'Working' },
   { value: 'WEEK_OFF', label: 'Week Off' },
 ];
-const FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
-const POLICY_REF = { endpoint: '/masters/work-week-policies', labelKey: 'policy_name' };
+const FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
+const POLICY_REF = { endpoint: '/masters/work-week-policies/options', labelKey: 'label' };
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

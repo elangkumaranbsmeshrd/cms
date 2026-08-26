@@ -235,8 +235,8 @@ export const WITHHOLDING_CALCULATED_ON_OPTIONS = [
 // primary user) is seeded "none" on customer.directory, so /customers would
 // 403 for exactly the role that needs this picker most.
 export const CUSTOMER_PICKER_REF = { endpoint: '/customers/picker', labelKey: 'company_name' };
-export const SERVICE_CATEGORY_REF = { endpoint: '/masters/service-categories' };
-export const INVOICE_FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+export const SERVICE_CATEGORY_REF = { endpoint: '/masters/service-categories/options', labelKey: 'label' };
+export const INVOICE_FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
 // /options, not the gated masters.bank_accounts/payment_modes/hsn_sac_codes
 // screen endpoints — same reasoning as CUSTOMER_PICKER_REF above: Accountant
 // is this module's primary user and no longer holds standalone `view` on
@@ -244,7 +244,7 @@ export const INVOICE_FY_REF = { endpoint: '/masters/financial-years', labelKey: 
 // unauthenticated-by-screen id+label picker (masters_lookup.py's
 // `label_field` route / masters_bank_accounts.py's own `/options`).
 export const BANK_ACCOUNT_REF = { endpoint: '/masters/bank-accounts/options', labelKey: 'label' };
-export const TAX_REF = { endpoint: '/masters/taxes', labelKey: 'tax_name' };
+export const TAX_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
 export const HSN_REF = { endpoint: '/masters/hsn-sac-codes/options', labelKey: 'label' };
 export const PAYMENT_MODE_REF = { endpoint: '/masters/payment-modes/options', labelKey: 'label' };
 

@@ -164,7 +164,7 @@ export class LeaveCarryForwardComponent implements OnInit {
   protected readonly formError = signal<string | null>(null);
 
   ngOnInit(): void {
-    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows),
       error: () => this.financialYears.set([]),
     });

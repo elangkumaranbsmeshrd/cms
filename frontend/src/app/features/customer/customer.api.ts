@@ -56,12 +56,12 @@ export interface CustomerWriteBody {
 
 // RefLookup shorthands shared by the directory/record/form screens — same
 // centralising convention opportunity.api.ts/ticket.api.ts already use.
-export const CUSTOMER_STATUS_REF = { endpoint: '/masters/customer-statuses' };
-export const CUSTOMER_SOURCE_REF = { endpoint: '/masters/customer-sources' };
+export const CUSTOMER_STATUS_REF = { endpoint: '/masters/customer-statuses/options', labelKey: 'label' };
+export const CUSTOMER_SOURCE_REF = { endpoint: '/masters/customer-sources/options', labelKey: 'label' };
 // Employee: GET /employees returns first_name/last_name as separate fields,
 // no {id,name} shape — labelKey: 'first_name' is the established workaround
 // used across every other module (asset.api.ts, opportunity.api.ts, ...).
-export const CUSTOMER_OWNER_REF = { endpoint: '/employees', labelKey: 'first_name' };
+export const CUSTOMER_OWNER_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // The Meshrd bank account a customer's payments are being collected into —
 // same /masters/bank-accounts/options lookup invoice.api.ts/purchase-bill.api.ts
 // use (2026-08-11 RBAC audit fix — not the gated screen endpoint).

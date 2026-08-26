@@ -55,7 +55,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'leave_type_id',
@@ -71,7 +71,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Financial Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
     },
     {
       key: 'department_id',
@@ -79,7 +79,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Departments',
-      optionsRef: { endpoint: '/masters/departments' },
+      optionsRef: { endpoint: '/masters/departments/options', labelKey: 'label' },
     },
     {
       key: 'designation_id',
@@ -87,7 +87,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Designations',
-      optionsRef: { endpoint: '/masters/designations' },
+      optionsRef: { endpoint: '/masters/designations/options', labelKey: 'label' },
     },
     {
       key: 'employment_type_id',
@@ -95,7 +95,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employment Types',
-      optionsRef: { endpoint: '/masters/employment-types' },
+      optionsRef: { endpoint: '/masters/employment-types/options', labelKey: 'label' },
     },
     {
       key: 'reporting_manager_id',
@@ -103,7 +103,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Managers',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'employee_status',
@@ -133,7 +133,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
     },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'leave_type_id', header: 'Leave Type', ref: { endpoint: '/masters/leave-types' } },
     { key: 'allowed_days', header: 'Allowed', type: 'number' },
     { key: 'carried_forward_days', header: 'Carried Fwd', type: 'number' },

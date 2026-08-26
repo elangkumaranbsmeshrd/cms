@@ -67,7 +67,7 @@ const config: ListScreenConfig<AdhocAdjustmentRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'adjustment_type',
@@ -116,7 +116,7 @@ const config: ListScreenConfig<AdhocAdjustmentRow> = {
     { key: 'date_added', label: 'Date Added', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'date_added' },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     {
       key: 'applies_to_mode',
       header: 'Applies To',

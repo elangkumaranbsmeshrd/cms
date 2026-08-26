@@ -6,7 +6,7 @@ const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 
 // §0.3: GET /employees returns first_name/last_name as separate fields, no
 // {id,name} shape — labelKey: 'first_name' is the established workaround
 // used repeatedly across every other already-built module.
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // §0.7: CompanyAddress has no `name` field at all — line1 is the imperfect
 // but functional stand-in; the endpoint takes no query params, so this
 // fetches unfiltered, same as every other RefLookup.

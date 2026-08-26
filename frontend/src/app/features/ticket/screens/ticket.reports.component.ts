@@ -267,7 +267,7 @@ export class TicketReportsComponent {
   constructor() {
     // Degrades to calendar-only presets on a 403/empty response, same as
     // ListScreenComponent's own daterange kind.
-    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows ?? []),
       error: () => this.financialYears.set([]),
     });

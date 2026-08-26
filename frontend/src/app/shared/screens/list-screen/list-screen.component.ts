@@ -327,7 +327,7 @@ export class ListScreenComponent<T = any> {
       if (fetched) return;
       if (!(this.config().filters ?? []).some((f) => f.kind === 'daterange')) return;
       fetched = true;
-      this.http.get<any[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+      this.http.get<any[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
         next: (rows) => this.financialYears.set(rows ?? []),
         error: () => this.financialYears.set([]),
       });

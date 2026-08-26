@@ -52,7 +52,7 @@ const config: ListScreenConfig<PayrollRunRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Financial Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
     },
     {
       key: 'status',

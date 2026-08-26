@@ -81,9 +81,9 @@ export const EXCESS_OPTIONS = [
   { value: 'PAID_OVERTIME', label: 'Paid overtime' },
   { value: 'NOT_TRACKED', label: 'Nothing — not tracked' },
 ];
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
-const DESIGNATION_REF = { endpoint: '/masters/designations' };
-const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const DESIGNATION_REF = { endpoint: '/masters/designations/options', labelKey: 'label' };
+const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types/options', labelKey: 'label' };
 
 /** Masters §3.20 Fields Table, Net Working Hours per Day: "Number — **derived,
  * never typed**. Gross − Break." It is a STORED GENERATED column server-side

@@ -194,10 +194,20 @@ export class EmpInsuranceComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
-    this.http.get<PlanOption[]>(`${environment.apiBaseUrl}/masters/insurance-plans?include_inactive=false`).subscribe({
-      next: (rows) => this.plans.set(rows),
-      error: () => this.plans.set([]),
-    });
+    // /options, not the gated masters.insurance_plans screen — that screen is
+    // Super-Admin-only (seed.py), so this picker was empty for Employee and
+    // Manager on their own Insurance & Benefits tab. plan_type rides along
+    // deliberately (masters_lookup.py's options_extra_fields): the form
+    // branches on it (dependents only for HEALTH), so the client needs the
+    // value. The plan's coverage and contribution figures stay unreachable.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean; plan_type: string }[]>(
+        `${environment.apiBaseUrl}/masters/insurance-plans/options`,
+      )
+      .subscribe({
+        next: (rows) => this.plans.set(rows.map((r) => ({ id: r.id, plan_name: r.label, plan_type: r.plan_type }))),
+        error: () => this.plans.set([]),
+      });
   }
 
   protected canEdit(): boolean {

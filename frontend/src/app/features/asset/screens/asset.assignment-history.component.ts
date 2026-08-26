@@ -8,7 +8,7 @@ import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { badgeClass, humanizeEnum } from '../../../shared/screens/cell-format';
 import { AssetAssignmentHistoryRow, AssetRow } from '../asset.api';
 
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // performed_by is a raw platform User id, distinct from employee_id above —
 // resolved via the cross-cutting GET /users.
 const USER_REF = { endpoint: '/users', labelKey: 'name' };

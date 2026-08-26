@@ -208,8 +208,17 @@ export class MyTaxDeclarationsComponent implements OnInit {
       },
       error: () => this.isLoading.set(false),
     });
-    this.http.get<TaxSchemeOption[]>(`${environment.apiBaseUrl}/masters/tax-schemes`).subscribe({
-      next: (rows) => this.schemes.set(rows),
+    // /options, not the gated masters.taxes screen (2026-08 RBAC audit fix) —
+    // this screen is open to all five roles, but `masters.taxes` is
+    // Accountant-view and nothing at all for Manager/HR/Employee (seed.py), so
+    // the scheme picker 404'd for exactly the people who elect a scheme.
+    // masters_tax_schemes.py's list_tax_scheme_options returns
+    // {id, label, is_active}; mapped onto TaxSchemeOption's existing
+    // {id, scheme_name} shape here so the template below needs no change —
+    // same shape-mapping pattern my-expenses.component.ts uses for
+    // /vendors/options.
+    this.http.get<{ id: string; label: string }[]>(`${environment.apiBaseUrl}/masters/tax-schemes/options`).subscribe({
+      next: (rows) => this.schemes.set(rows.map((r) => ({ id: r.id, scheme_name: r.label }))),
       error: () => this.schemes.set([]),
     });
   }

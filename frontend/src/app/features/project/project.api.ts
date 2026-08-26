@@ -131,12 +131,12 @@ export interface TimesheetEntryRow {
 // the raw id / an empty list on that error, so no extra handling is needed
 // here to satisfy that requirement.
 // ---------------------------------------------------------------------------
-export const CUSTOMER_REF = { endpoint: '/customers', labelKey: 'company_name' };
-export const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+export const CUSTOMER_REF = { endpoint: '/customers/options', labelKey: 'label' };
+export const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // author_id (TaskComment/BugComment) and reported_by (Bug) are platform User
 // ids, not Employee ids — resolved separately via the cross-cutting GET /users.
 export const USER_REF = { endpoint: '/users', labelKey: 'name' };
-export const PROJECT_FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+export const PROJECT_FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
 
 // ---------------------------------------------------------------------------
 // Static option lists — verbatim backend CHECK-constraint values (schemas/

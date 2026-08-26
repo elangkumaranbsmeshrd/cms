@@ -472,5 +472,14 @@ combined_router.include_router(
         # contribution figures and keeps using the full list route (which HR,
         # its only non-Super-Admin caller, already holds `view` on).
         label_field="plan_name",
+        # plan_type clears the options_extra_fields bar for the same reason
+        # expense-types' claim_type does: the Insurance & Benefits tab RENDERS
+        # it, and its conditional fields branch on it (dependents only for
+        # HEALTH, nominees required). A server-side filter cannot supply a
+        # value the form has to read back. An enum naming a plan category —
+        # the coverage and contribution FIGURES this row also carries stay
+        # unreachable, which is why this registration was worth naming in the
+        # docstring in the first place.
+        options_extra_fields=("plan_type",),
     )
 )

@@ -26,18 +26,18 @@ function lastModifiedByOptions(rows: readonly EmployeeRow[], refData: RefDataSer
   return [...seen.values()];
 }
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
-const DESIGNATION_REF = { endpoint: '/masters/designations' };
-const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const DESIGNATION_REF = { endpoint: '/masters/designations/options', labelKey: 'label' };
+const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types/options', labelKey: 'label' };
 // §0.3: GET /employees returns first_name/last_name as separate fields, no
 // {id,name} shape — labelKey: 'first_name' is the established workaround
 // used repeatedly across every other already-built module (see
 // asset.directory.list.config.ts's own EMPLOYEE_REF for the precedent).
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // Same reasoning as emp.record.config.ts's own WORK_LOCATION_REF: the
 // prototype's Chennai/Coimbatore static list is really the real
 // work_location_address_id FK to company_addresses, resolved via 'city'.
-const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'city' };
+const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
 
 // employees.models.py: employment_status is a plain String(12), no CHECK
 // constraint (default 'ACTIVE'); employee_lifecycle.py's own transitions

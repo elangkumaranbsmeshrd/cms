@@ -1,7 +1,7 @@
 import { FormScreenConfig } from '../../../shared/screens/screen.types';
 import { DesignationRow } from '../masters.api';
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 
 // §3.10's Fields Table has a fourth field, "Status (Active/Inactive)"
 // (app-forms.js 'm.designation'). §3b built it as `createOnly` — settable

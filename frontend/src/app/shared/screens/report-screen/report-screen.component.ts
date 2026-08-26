@@ -334,7 +334,7 @@ export class ReportScreenComponent<T = any> {
       if (fetchedFy) return;
       if (!(this.config().filters ?? []).some((f) => f.kind === 'daterange')) return;
       fetchedFy = true;
-      this.http.get<any[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+      this.http.get<any[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
         next: (rows) => this.financialYears.set(rows ?? []),
         error: () => this.financialYears.set([]),
       });

@@ -258,6 +258,44 @@ async def list_customers(
     return masked_rows
 
 
+@router.get("/customers/options", response_model=None)
+async def list_customer_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """The `/options` contract masters_lookup.py's `label_field` docstring
+    defines, applied to Customers.
+
+    Distinct from `/customers/picker` immediately below, which is gated on
+    `invoice.list` because §6 scopes it to Accountant's invoice-creation flow
+    and returns billing details with the name. This one is the plain label
+    lookup: Project Directory and My Projects & Tasks both render a project's
+    customer name, and `customer.directory` is not granted to Employee, HR or
+    Accountant — so those screens showed a 404 and an unresolved column for
+    three of the five roles.
+
+    Selects `company_name` and stops. None of the record's own commercially
+    sensitive columns — billing address, GSTIN/PAN, credit terms, the
+    `collected_into_bank_account_id` that customer.directory masks from
+    Manager — is reachable through this route, which is the same argument
+    vendors.py's `/options` and masters_bank_accounts.py's run on. A
+    customer's company name is not a secret: it is printed on every invoice
+    the customer themselves receives.
+
+    No `is_active` and no `include_inactive` here, unlike the other `/options`
+    routes: a Customer has no boolean active flag. Its state is `status_id`,
+    a row in the dynamic CustomerStatus master that a Super Admin defines —
+    so there is no "the active one" to filter on without hardcoding a status
+    name, which §6's nothing-is-hardcoded rule forbids outright. Returning
+    every customer is also the correct behaviour for the label-resolution
+    case: a project may reference a customer in any status and still has to
+    render its name.
+    """
+    stmt = select(Customer.id, Customer.company_name).order_by(Customer.company_name)
+    rows = (await db.execute(stmt)).all()
+    return [{"id": row_id, "label": company_name} for row_id, company_name in rows]
+
+
 @router.get("/customers/picker")
 async def customer_picker(
     db: AsyncSession = Depends(get_db),

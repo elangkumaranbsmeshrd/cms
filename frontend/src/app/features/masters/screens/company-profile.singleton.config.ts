@@ -151,7 +151,7 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
       key: 'default_billing_tax_head_id',
       label: 'Default Billing Tax',
       type: 'select',
-      ref: { endpoint: '/masters/taxes', labelKey: 'tax_name' },
+      ref: { endpoint: '/masters/taxes/options', labelKey: 'label' },
       hint: 'Every in-force Sales/Billing tax head from Masters → Taxes — only the starting suggestion pre-filled on a new Invoice or Quote, never a lock; changed per document any time. Optional — a company with none configured can still save this profile.',
     },
     {

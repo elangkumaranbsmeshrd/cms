@@ -1,16 +1,16 @@
 import { FormScreenConfig } from '../../../shared/screens/screen.types';
 import { EmployeeRow } from '../employee.api';
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
-const DESIGNATION_REF = { endpoint: '/masters/designations' };
-const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const DESIGNATION_REF = { endpoint: '/masters/designations/options', labelKey: 'label' };
+const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types/options', labelKey: 'label' };
 // §0.3: GET /employees returns first_name/last_name as separate fields, no
 // {id,name} shape — labelKey: 'first_name' is the established workaround
 // used repeatedly across every other already-built module (see
 // asset.directory.list.config.ts's own EMPLOYEE_REF for the precedent).
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // Same reasoning as emp.record.config.ts's own WORK_LOCATION_REF.
-const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'city' };
+const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
 
 // §2.1's "+ Add Employee" (Super Admin/HR) create flow. record-screen
 // component has no create branch anywhere in this codebase (confirmed —

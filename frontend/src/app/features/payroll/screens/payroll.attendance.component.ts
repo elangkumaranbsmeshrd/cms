@@ -17,9 +17,9 @@ import {
   MONTH_NAMES,
 } from '../payroll.api';
 
-const DEPARTMENT_REF: RefLookup = { endpoint: '/masters/departments' };
-const EMPLOYEE_REF: RefLookup = { endpoint: '/employees', labelKey: 'first_name' };
-const WORK_WEEK_POLICY_REF: RefLookup = { endpoint: '/masters/work-week-policies', labelKey: 'policy_name' };
+const DEPARTMENT_REF: RefLookup = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const EMPLOYEE_REF: RefLookup = { endpoint: '/employees/options', labelKey: 'label' };
+const WORK_WEEK_POLICY_REF: RefLookup = { endpoint: '/masters/work-week-policies/options', labelKey: 'label' };
 // attendance_reconciliation.py's own _STATUS_DISPLAY / the 3-value
 // vocabulary this component's own hourStatusBadge() already keys off.
 const HOUR_STATUS_OPTIONS = ['Met', 'Short — compensable', 'Short — payroll impact'] as const;

@@ -279,7 +279,7 @@ export class CalendarScreenComponent<T = any> {
   protected readonly view = signal<'cal' | 'list'>('cal');
 
   constructor() {
-    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows ?? []),
       // A role that can't read Financial Year at all just doesn't get the
       // filter — same degrade-quietly rule as this file's own Month/Type.

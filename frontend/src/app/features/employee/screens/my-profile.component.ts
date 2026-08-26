@@ -11,9 +11,9 @@ import { EmpSalaryStructureComponent } from './emp.salary-structure.component';
 
 const SCREEN = 'employee.my_profile';
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
-const DESIGNATION_REF = { endpoint: '/masters/designations' };
-const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const DESIGNATION_REF = { endpoint: '/masters/designations/options', labelKey: 'label' };
+const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types/options', labelKey: 'label' };
 
 interface MyProfileRow {
   readonly id: string;

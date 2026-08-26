@@ -75,6 +75,48 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 
 
+@router.get("/options", response_model=None)
+async def list_employee_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """The `/options` contract masters_lookup.py's `label_field` docstring
+    defines, applied to Employees.
+
+    `employee.directory` is not granted to Employee (seed.py), yet Project
+    Directory renders a project lead and Offboarding renders a resignation's
+    employee — so those columns 404'd and showed a raw id for that role. This
+    is the same precedent `GET /users` already set in this codebase: a
+    colleague's NAME is not privileged information in an app that shows it as
+    an assignee, an approver and a reporting manager on screens every role
+    can already open.
+
+    Selects the two name columns and the code, and stops. Nothing else on the
+    Employee row — date of birth, personal contact details, bank and
+    statutory identifiers, salary, the whole Layer-3 manifest that
+    `list_employees` runs `apply_field_masking` over — is reachable here.
+
+    The label is the FULL name, not `first_name`. Every caller previously
+    passed `labelKey: 'first_name'`, which is genuinely ambiguous in this
+    data: the directory holds several people sharing a first name, so a
+    "Project Lead: Divya" column could not identify anyone. The employee code
+    is returned alongside so a caller that needs to disambiguate further can,
+    without a second round trip.
+    """
+    stmt = select(Employee.id, Employee.first_name, Employee.last_name, Employee.employee_code).order_by(
+        Employee.first_name, Employee.last_name
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "id": row_id,
+            "label": f"{first} {last}".strip() if last else first,
+            "employee_code": code,
+        }
+        for row_id, first, last, code in rows
+    ]
+
+
 # Layer 3 (RBAC §3.2/§3.4) call-site pattern, matching customers.py/vendors.py/
 # assets.py's already-proven _masked_<x> helper: build the plain dict FastAPI
 # would otherwise auto-serialize, then let apply_field_masking hide/mask

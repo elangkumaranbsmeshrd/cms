@@ -13,7 +13,7 @@ import { EMPLOYEE_SELECTION_MODE_OPTIONS, INCLUSION_STATUS_OPTIONS, MONTH_NAMES,
 import { PayrollEmployeePickerComponent } from './payroll.employee-picker.component';
 
 const SCREEN = 'payroll.run';
-const EMPLOYEE_REF: RefLookup = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF: RefLookup = { endpoint: '/employees/options', labelKey: 'label' };
 
 /** §2.1 Run Payroll — one bespoke component behind two routes,
  * /payroll/run/new (Stage 1: pick Month/Year/Selection/Working-Days-Override)

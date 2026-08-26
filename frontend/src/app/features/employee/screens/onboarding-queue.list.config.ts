@@ -12,7 +12,7 @@ interface OnboardingQueueRow {
   readonly oldest_incomplete_step: string | null;
 }
 
-const DEPARTMENT_REF: RefLookup = { endpoint: '/masters/departments' };
+const DEPARTMENT_REF: RefLookup = { endpoint: '/masters/departments/options', labelKey: 'label' };
 
 const COMPLETION_OPTIONS = [
   { value: 'NOT_STARTED', label: 'Not Started' },

@@ -87,7 +87,7 @@ const config: ListScreenConfig<LeaveApprovalRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'leave_type_id',
@@ -136,7 +136,7 @@ const config: ListScreenConfig<LeaveApprovalRow> = {
   ],
   searchFields: ['reason'],
   columns: [
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'leave_type_id', header: 'Leave Type', ref: { endpoint: '/masters/leave-types' } },
     { key: 'dates', header: 'Dates', compute: (row) => (row.from_date === row.to_date ? formatDate(row.from_date) : `${formatDate(row.from_date)} to ${formatDate(row.to_date)}`) },
     { key: 'days_requested', header: 'Days', type: 'number' },

@@ -11,7 +11,7 @@ import { ADJUSTMENT_TYPE_OPTIONS, APPLIES_TO_COMPONENT_OPTIONS, APPLIES_TO_MODE_
 import { PayrollEmployeePickerComponent } from './payroll.employee-picker.component';
 
 const SCREEN = 'payroll.adhoc_adjustments';
-const EMPLOYEE_REF: RefLookup = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF: RefLookup = { endpoint: '/employees/options', labelKey: 'label' };
 
 /** §2.1a "+ Add Adjustment". Bespoke, not FormScreenConfig: the
  * MULTIPLE_EMPLOYEES mode needs the reusable live employee picker, which

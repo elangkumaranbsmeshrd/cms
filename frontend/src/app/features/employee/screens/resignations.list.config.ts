@@ -49,7 +49,7 @@ const config: ListScreenConfig<ResignationRow> = {
     },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'last_working_day', header: 'Last Working Day', type: 'date' },
     { key: 'submitted_at', header: 'Submitted On', type: 'date' },
     { key: 'status', header: 'Status', type: 'status', staticOptions: STATUS_OPTIONS },

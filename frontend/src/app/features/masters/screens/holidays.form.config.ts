@@ -1,7 +1,7 @@
 import { FormScreenConfig } from '../../../shared/screens/screen.types';
 import { HolidayRow } from '../masters.api';
 
-const FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+const FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
 const HOLIDAY_TYPE_OPTIONS = [
   { value: 'MANDATORY', label: 'Mandatory' },
   { value: 'OPTIONAL', label: 'Optional' },

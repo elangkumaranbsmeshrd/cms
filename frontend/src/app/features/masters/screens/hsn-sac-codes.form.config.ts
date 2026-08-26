@@ -21,7 +21,7 @@ interface HsnSacFormRow extends HsnSacCodeRow {
 // 'name'. The server re-checks the choice on write (_hsn_sac_before_write):
 // the head must exist, be Sales/Billing or Purchase scope, and be in force
 // today, or the save comes back 422 with that reason.
-const TAX_HEAD_REF = { endpoint: '/masters/taxes', labelKey: 'tax_name' };
+const TAX_HEAD_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
 
 // Values are the two-letter codes the column is typed for (code_type is
 // String(3)); labels are the prototype's own option strings (app-forms.js

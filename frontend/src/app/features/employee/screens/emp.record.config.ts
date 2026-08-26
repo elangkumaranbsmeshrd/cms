@@ -13,9 +13,9 @@ import { EmpOfferLettersComponent } from './emp.offer-letters.component';
 // Masters lookup (masters_lookup.py's generic factory — {id, name, is_active}
 // over the wire), the same RefLookup shape every other select-backed FK field
 // in this app uses (e.g. designations.form.config.ts's own DEPARTMENT_REF).
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
-const DESIGNATION_REF = { endpoint: '/masters/designations' };
-const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
+const DESIGNATION_REF = { endpoint: '/masters/designations/options', labelKey: 'label' };
+const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types/options', labelKey: 'label' };
 // §2.2's "Work Location" is a plain Chennai/Coimbatore select over the mock
 // data, but the real column (work_location_address_id, models/employee.py:36)
 // is a genuine FK to company_addresses — CompanyAddressOut has no bare 'name'
@@ -25,7 +25,7 @@ const EMPLOYMENT_TYPE_REF = { endpoint: '/masters/employment-types' };
 // for the identical FK shape on Asset.location_address_id (that one uses
 // 'line1' instead of 'city', since an asset's storage location cares about
 // the street address, not the city).
-const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labelKey: 'city' };
+const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
 // §0.3: GET /employees returns first_name/last_name as separate fields, no
 // {id,name} shape — labelKey: 'first_name' is the established workaround
 // used repeatedly across every other already-built module (asset.directory.
@@ -35,7 +35,7 @@ const WORK_LOCATION_REF = { endpoint: '/masters/company-profile/addresses', labe
 // field unrendered on the theory that no such lookup source existed; it
 // does, this file just hadn't adopted the same pattern its siblings already
 // had.
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 
 const config: RecordScreenConfig<EmployeeRow> = {
   shape: 'record',

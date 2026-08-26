@@ -53,7 +53,7 @@ const config: ListScreenConfig<LeaveBalanceAdjustmentRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'leave_type_id',
@@ -81,7 +81,7 @@ const config: ListScreenConfig<LeaveBalanceAdjustmentRow> = {
     { key: 'direction', label: 'Direction', kind: 'select', transport: 'server', allLabel: 'Any', options: DIRECTION_OPTIONS },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'leave_type_id', header: 'Leave Type', ref: { endpoint: '/masters/leave-types' } },
     { key: 'adjusted_at', header: 'Date', type: 'date' },
     { key: 'adjustment_days', header: 'Amount', type: 'number' },

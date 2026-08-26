@@ -12,7 +12,7 @@ import { ASSET_STATUS_OPTIONS } from '../asset.api';
 const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
 const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 const SCREEN = 'asset.reports';
 
 interface CategoryBreakdownRow {

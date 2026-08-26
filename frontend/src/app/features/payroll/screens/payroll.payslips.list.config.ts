@@ -67,7 +67,7 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employees',
-      optionsRef: { endpoint: '/employees', labelKey: 'first_name' },
+      optionsRef: { endpoint: '/employees/options', labelKey: 'label' },
     },
     {
       key: 'period_month',
@@ -83,7 +83,7 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Departments',
-      optionsRef: { endpoint: '/masters/departments' },
+      optionsRef: { endpoint: '/masters/departments/options', labelKey: 'label' },
     },
     {
       key: 'status',
@@ -99,7 +99,7 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Financial Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
     },
     {
       key: 'employment_type_id',
@@ -107,7 +107,7 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       kind: 'select',
       transport: 'server',
       allLabel: 'All Employment Types',
-      optionsRef: { endpoint: '/masters/employment-types' },
+      optionsRef: { endpoint: '/masters/employment-types/options', labelKey: 'label' },
     },
     {
       key: 'designation',

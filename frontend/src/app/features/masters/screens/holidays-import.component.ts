@@ -7,7 +7,7 @@ import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
 
-const FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+const FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
 
 type HolidayTypeChoice = 'MANDATORY' | 'OPTIONAL' | 'MIXED';
 

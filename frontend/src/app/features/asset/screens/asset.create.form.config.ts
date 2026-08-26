@@ -5,7 +5,7 @@ const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 
 const VENDOR_REF = { endpoint: '/vendors/options', labelKey: 'label' };
 const LOCATION_REF = { endpoint: '/masters/company-profile/addresses/options', labelKey: 'label' };
 const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 
 // §0.8/§2 — "+ Add Asset" create flow. record-screen.component.ts has no
 // create branch anywhere in this codebase (confirmed: every 'record'-shape

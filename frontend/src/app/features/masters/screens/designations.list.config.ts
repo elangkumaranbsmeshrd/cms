@@ -1,7 +1,7 @@
 import { ListScreenConfig } from '../../../shared/screens/screen.types';
 import { DesignationRow } from '../masters.api';
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 
 const config: ListScreenConfig<DesignationRow> = {
   shape: 'list',

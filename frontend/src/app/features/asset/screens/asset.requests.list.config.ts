@@ -1,7 +1,7 @@
 import { ListScreenConfig } from '../../../shared/screens/screen.types';
 import { AssetRequestRow } from '../asset.api';
 
-const EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 const ASSET_REF = { endpoint: '/assets' };
 const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 

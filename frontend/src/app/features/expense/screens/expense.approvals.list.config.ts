@@ -68,7 +68,7 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
   searchParam: 'search',
   includeInactiveParam: false,
   filters: [
-    { key: 'employee_id', label: 'Employee', kind: 'select', transport: 'server', allLabel: 'All Employees', optionsRef: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', label: 'Employee', kind: 'select', transport: 'server', allLabel: 'All Employees', optionsRef: { endpoint: '/employees/options', labelKey: 'label' } },
     // §2.2's own "Department" filter has no home here: ExpenseClaim carries
     // no department reference at all (neither the DB model nor
     // ExpenseClaimOut — confirmed against backend/app/schemas/finance.py),
@@ -117,7 +117,7 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
     { key: 'has_receipt', label: 'Has Receipt', kind: 'tristate', transport: 'server', allLabel: 'Receipt — Any' },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', type: 'avatar', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', cellClass: 'cell-strong', type: 'avatar', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'expense_type_name_snapshot', header: 'Type' },
     // Always reads "Reimbursable" on this screen in practice (see the
     // claim_type filter's own comment above) — kept as a real column anyway

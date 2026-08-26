@@ -114,9 +114,9 @@ export const TICKET_SATISFACTION_OPTIONS = [
 // filters, the New/Edit form, Detail's header and Assignment History table,
 // Reports' filters and Top Customers table) — see this module's own
 // id-resolution map.
-export const TICKET_CATEGORY_REF = { endpoint: '/masters/ticket-categories' };
-export const TICKET_CUSTOMER_REF = { endpoint: '/customers', labelKey: 'company_name' };
-export const TICKET_EMPLOYEE_REF = { endpoint: '/employees', labelKey: 'first_name' };
+export const TICKET_CATEGORY_REF = { endpoint: '/masters/ticket-categories/options', labelKey: 'label' };
+export const TICKET_CUSTOMER_REF = { endpoint: '/customers/options', labelKey: 'label' };
+export const TICKET_EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
 // §2.2/§2.3 Linked Project — Project's own id -> project_name (GET /projects,
 // schemas/project.py's ProjectOut). The Project module is real
 // (backend/app/api/v1/projects.py), so this is a genuine lookup, not a stub —

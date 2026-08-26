@@ -21,7 +21,7 @@ interface AssignedAssetRow {
 // masters_lookup.py's generic factory), same RefLookup shape every other
 // FK-backed column/filter in this app uses. Endpoint confirmed against
 // masters_simple.py:270 ("/masters/asset-categories").
-const CATEGORY_REF = { endpoint: '/masters/asset-categories' };
+const CATEGORY_REF = { endpoint: '/masters/asset-categories/options', labelKey: 'label' };
 
 /** §2.2 Employee Master Record — Tab: Assigned Assets (read-only): "Pulled
  * from Asset Management. Shows a simple table: Asset Tag (e.g.

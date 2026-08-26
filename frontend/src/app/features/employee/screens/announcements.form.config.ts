@@ -9,7 +9,7 @@ interface AnnouncementFormRow {
   readonly expiry_date: string | null;
 }
 
-const DEPARTMENT_REF = { endpoint: '/masters/departments' };
+const DEPARTMENT_REF = { endpoint: '/masters/departments/options', labelKey: 'label' };
 
 /** §2.11 Announcements — "+ New Announcement" (HR/SA, action 'post').
  * POST-only: AnnouncementCreate has no matching PUT (a Draft is created,

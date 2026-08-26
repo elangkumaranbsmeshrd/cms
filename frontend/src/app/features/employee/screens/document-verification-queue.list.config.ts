@@ -49,7 +49,7 @@ const config: ListScreenConfig<QueueDocumentRow> = {
     },
   ],
   columns: [
-    { key: 'employee_id', header: 'Employee', ref: { endpoint: '/employees', labelKey: 'first_name' } },
+    { key: 'employee_id', header: 'Employee', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'document_type', header: 'Document Type', cellClass: 'cell-strong', staticOptions: DOCUMENT_TYPE_OPTIONS },
     { key: 'file_id', header: 'File', cellClass: 'mono', compute: (row) => row.file_id.slice(0, 8) },
     { key: 'uploaded_at', header: 'Uploaded On', type: 'date' },

@@ -418,7 +418,7 @@ export class TopbarComponent implements OnInit {
         this.entitySearching.set(false);
         this.entityHits.set(hits);
       });
-    this.http.get<FinancialYearRow[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearRow[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows ?? []),
       error: () => this.financialYears.set([]),
     });

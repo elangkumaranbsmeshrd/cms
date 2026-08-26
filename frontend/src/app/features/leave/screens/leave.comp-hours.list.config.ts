@@ -80,7 +80,7 @@ const config: ListScreenConfig<CompHoursRow> = {
       kind: 'select',
       transport: 'client',
       allLabel: 'All Financial Years',
-      optionsRef: { endpoint: '/masters/financial-years', labelKey: 'label' },
+      optionsRef: { endpoint: '/masters/financial-years/options', labelKey: 'label' },
       predicate: (row, v) => row.financial_year_id === v,
     },
   ],

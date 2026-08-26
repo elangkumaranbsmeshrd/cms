@@ -122,14 +122,14 @@ export const OPPORTUNITY_ACTIVITY_TYPE_ICON: Record<string, string> = { CALL: '�
 // RefDataService's default labelKey is 'name', so leaving this unset would
 // resolve every customer to the literal string "undefined". company_name is
 // the real field.
-export const OPPORTUNITY_CUSTOMER_REF = { endpoint: '/customers', labelKey: 'company_name' };
+export const OPPORTUNITY_CUSTOMER_REF = { endpoint: '/customers/options', labelKey: 'label' };
 // Employee: GET /employees returns first_name/last_name as separate fields,
 // no {id,name} shape — labelKey: 'first_name' is the established workaround
 // used across every other module (asset.api.ts, ticket.api.ts, ...). Reused
 // for owner_id, created_by and last_modified_by alike — all three are
 // Employee ids on this endpoint.
-export const OPPORTUNITY_OWNER_REF = { endpoint: '/employees', labelKey: 'first_name' };
-export const OPPORTUNITY_FY_REF = { endpoint: '/masters/financial-years', labelKey: 'label' };
+export const OPPORTUNITY_OWNER_REF = { endpoint: '/employees/options', labelKey: 'label' };
+export const OPPORTUNITY_FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
 // Distinct from OPPORTUNITY_OWNER_REF above: OpportunityFileRow.created_by and
 // OpportunityActivityRow.logged_by are platform User ids (whoever was logged
 // in when they uploaded/logged the entry), not Employee ids — resolved via
