@@ -48,6 +48,45 @@ async def _to_out(db: AsyncSession, ann: Announcement) -> AnnouncementOut:
     return out
 
 
+async def _target_department_ids(db: AsyncSession, announcement_ids: set[str]) -> dict[str, list[str]]:
+    """Batch target lookup for the List — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+
+    The order_by is not a new ordering, it PINS the one the per-announcement
+    query already produced: `WHERE announcement_id = ?` reads through
+    ux_announcement_targets (announcement_id, department_id), so an
+    announcement's targets always came back in department_id order. Naming
+    that index's own columns keeps each slice byte-identical AND keeps MySQL
+    reading the same index instead of sorting.
+    """
+    if not announcement_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(AnnouncementTarget.announcement_id, AnnouncementTarget.department_id).where(AnnouncementTarget.announcement_id.in_(announcement_ids))
+            .order_by(AnnouncementTarget.announcement_id, AnnouncementTarget.department_id)
+        )
+    ).all()
+    grouped: dict[str, list[str]] = {}
+    for announcement_id, department_id in rows:
+        grouped.setdefault(announcement_id, []).append(department_id)
+    return grouped
+
+
+async def _to_outs(db: AsyncSession, announcements: list[Announcement]) -> list[AnnouncementOut]:
+    """List counterpart to _to_out: 1 query in TOTAL rather than 1 per
+    announcement. Same output, row for row — an ALL_EMPLOYEES announcement
+    (no targets at all) still gets the empty department_ids list.
+    """
+    department_ids_by_announcement = await _target_department_ids(db, {ann.id for ann in announcements})
+    outs = []
+    for ann in announcements:
+        out = AnnouncementOut.model_validate(ann)
+        out.department_ids = list(department_ids_by_announcement.get(ann.id, ()))
+        outs.append(out)
+    return outs
+
+
 @router.get("", response_model=None)
 async def list_announcements(
     db: AsyncSession = Depends(get_db),
@@ -96,7 +135,7 @@ async def list_announcements(
         }
         return await list_export.build_export(format, db, current_user, "Announcements", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _to_out(db, r) for r in rows]
+    return await _to_outs(db, list(rows))
 
 
 @router.post("", response_model=AnnouncementOut, status_code=status.HTTP_201_CREATED)

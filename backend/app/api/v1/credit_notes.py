@@ -57,6 +57,41 @@ async def _load_credit_note_out(db: AsyncSession, row: CreditNote) -> CreditNote
     return out
 
 
+async def _credit_note_line_items(db: AsyncSession, credit_note_ids: set[str]) -> dict[str, list[CreditNoteLineItem]]:
+    """Batch line-item lookup for the List — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (credit_note_id, sequence) so each note's own slice comes back
+    in exactly the sequence order the per-note query produced; the leading
+    credit_note_id only groups, it never reorders within.
+    """
+    if not credit_note_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(CreditNoteLineItem).where(CreditNoteLineItem.credit_note_id.in_(credit_note_ids))
+            .order_by(CreditNoteLineItem.credit_note_id, CreditNoteLineItem.sequence, CreditNoteLineItem.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[CreditNoteLineItem]] = {}
+    for row in rows:
+        grouped.setdefault(row.credit_note_id, []).append(row)
+    return grouped
+
+
+async def _load_credit_note_outs(db: AsyncSession, credit_notes: list[CreditNote]) -> list[CreditNoteOut]:
+    """List counterpart to _load_credit_note_out: 1 query in TOTAL rather
+    than 1 per note. Same output, row for row — a note with no lines still
+    gets the empty list its own query returned.
+    """
+    lines_by_note = await _credit_note_line_items(db, {note.id for note in credit_notes})
+    outs = []
+    for note in credit_notes:
+        out = CreditNoteOut.model_validate(note)
+        out.line_items = list(lines_by_note.get(note.id, ()))
+        outs.append(out)
+    return outs
+
+
 async def _build_line_item_rows(db: AsyncSession, invoice_id: str, line_items_affected: list[str], credit_amount: Decimal) -> list[dict]:
     """Splits `credit_amount` proportionally to each selected line's own
     weight, not the full amount onto every line (the bug the audit found: a
@@ -150,7 +185,7 @@ async def list_credit_notes(
         }
         return await list_export.build_export(format, db, current_user, "Credit Notes", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_credit_note_out(db, row) for row in rows]
+    return await _load_credit_note_outs(db, list(rows))
 
 
 @router.post("", response_model=CreditNoteOut, status_code=status.HTTP_201_CREATED)

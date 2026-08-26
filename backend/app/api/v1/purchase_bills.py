@@ -161,7 +161,7 @@ async def list_purchase_bills(
         }
         return await list_export.build_export(format, db, current_user, "Purchase Bills", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_bill_out(db, bill) for bill in filtered]
+    return await _load_bill_outs(db, filtered)
 
 
 async def _load_bill_out(db: AsyncSession, bill: PurchaseBill) -> PurchaseBillOut:
@@ -178,6 +178,84 @@ async def _load_bill_out(db: AsyncSession, bill: PurchaseBill) -> PurchaseBillOu
     out.tax_lines = list(tax_lines)
     out.effective_bank_account_id = latest_payment.paid_from_bank_account_id if latest_payment else bill.bank_account_id
     return out
+
+
+async def _bill_line_items(db: AsyncSession, bill_ids: set[str]) -> dict[str, list[PurchaseBillLineItem]]:
+    """Batch line-item lookup for the List — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (purchase_bill_id, sequence) so each bill's own slice comes
+    back in exactly the sequence order _load_bill_out's per-bill query
+    produced; the leading bill id only groups, it never reorders within.
+    """
+    if not bill_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PurchaseBillLineItem).where(PurchaseBillLineItem.purchase_bill_id.in_(bill_ids))
+            .order_by(PurchaseBillLineItem.purchase_bill_id, PurchaseBillLineItem.sequence, PurchaseBillLineItem.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PurchaseBillLineItem]] = {}
+    for row in rows:
+        grouped.setdefault(row.purchase_bill_id, []).append(row)
+    return grouped
+
+
+async def _bill_tax_lines(db: AsyncSession, bill_ids: set[str]) -> dict[str, list[PurchaseBillTaxLine]]:
+    if not bill_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PurchaseBillTaxLine).where(PurchaseBillTaxLine.purchase_bill_id.in_(bill_ids))
+            .order_by(PurchaseBillTaxLine.purchase_bill_id, PurchaseBillTaxLine.sequence, PurchaseBillTaxLine.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PurchaseBillTaxLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.purchase_bill_id, []).append(row)
+    return grouped
+
+
+async def _latest_bill_payments(db: AsyncSession, bill_ids: set[str]) -> dict[str, PurchaseBillPayment]:
+    """The single most recent RECORDED payment per bill — the row
+    _load_bill_out picks with .first() off a payment_date-desc ordering, only
+    resolved for every listed bill in one query. Same RECORDED-only filter
+    and same payment_date-desc ordering; the first row seen for a bill id
+    wins, which is exactly what .first() returned per bill.
+    """
+    if not bill_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PurchaseBillPayment).where(PurchaseBillPayment.purchase_bill_id.in_(bill_ids), PurchaseBillPayment.status == "RECORDED")
+            .order_by(PurchaseBillPayment.purchase_bill_id, PurchaseBillPayment.payment_date.desc())
+        )
+    ).scalars().all()
+    latest: dict[str, PurchaseBillPayment] = {}
+    for row in rows:
+        latest.setdefault(row.purchase_bill_id, row)
+    return latest
+
+
+async def _load_bill_outs(db: AsyncSession, bills: list[PurchaseBill]) -> list[PurchaseBillOut]:
+    """List counterpart to _load_bill_out: 3 queries in TOTAL rather than 3
+    per bill. Same output, row for row — a bill with no lines/no tax lines
+    still gets the empty list, and a bill with no RECORDED payment still
+    falls back to its own bank_account_id (which may itself be null).
+    """
+    bill_ids = {bill.id for bill in bills}
+    lines_by_bill = await _bill_line_items(db, bill_ids)
+    tax_lines_by_bill = await _bill_tax_lines(db, bill_ids)
+    latest_payment_by_bill = await _latest_bill_payments(db, bill_ids)
+    outs = []
+    for bill in bills:
+        out = PurchaseBillOut.model_validate(bill)
+        out.line_items = list(lines_by_bill.get(bill.id, ()))
+        out.tax_lines = list(tax_lines_by_bill.get(bill.id, ()))
+        latest_payment = latest_payment_by_bill.get(bill.id)
+        out.effective_bank_account_id = latest_payment.paid_from_bank_account_id if latest_payment else bill.bank_account_id
+        outs.append(out)
+    return outs
 
 
 @router.post("", response_model=PurchaseBillOut, status_code=status.HTTP_201_CREATED)

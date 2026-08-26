@@ -116,6 +116,63 @@ async def _load_invoice_out(db: AsyncSession, invoice: Invoice) -> InvoiceOut:
     return out
 
 
+async def _invoice_line_items(db: AsyncSession, invoice_ids: set[str]) -> dict[str, list[InvoiceLineItem]]:
+    """Batch line-item lookup for the List — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (invoice_id, sequence) so each invoice's own slice comes back
+    in exactly the sequence order _load_invoice_out's per-invoice query
+    produced; the leading invoice_id only groups, it never reorders within.
+    The trailing id is a tiebreak that cannot fire on data this app writes —
+    sequence is allocated 1..n per invoice — but a batched query is the
+    wrong place to leave an arbitrary order sitting, so it is pinned to the
+    same id order ix_invlines_invoice's own entries carry.
+    """
+    if not invoice_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(InvoiceLineItem).where(InvoiceLineItem.invoice_id.in_(invoice_ids))
+            .order_by(InvoiceLineItem.invoice_id, InvoiceLineItem.sequence, InvoiceLineItem.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[InvoiceLineItem]] = {}
+    for row in rows:
+        grouped.setdefault(row.invoice_id, []).append(row)
+    return grouped
+
+
+async def _invoice_tax_lines(db: AsyncSession, invoice_ids: set[str]) -> dict[str, list[InvoiceTaxLine]]:
+    if not invoice_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(InvoiceTaxLine).where(InvoiceTaxLine.invoice_id.in_(invoice_ids))
+            .order_by(InvoiceTaxLine.invoice_id, InvoiceTaxLine.sequence, InvoiceTaxLine.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[InvoiceTaxLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.invoice_id, []).append(row)
+    return grouped
+
+
+async def _load_invoice_outs(db: AsyncSession, invoices: list[Invoice]) -> list[InvoiceOut]:
+    """List counterpart to _load_invoice_out: 2 queries in TOTAL rather than
+    2 per invoice. Same output, row for row — an invoice with no lines/no tax
+    lines still gets the empty list the per-invoice query returned for it.
+    """
+    invoice_ids = {invoice.id for invoice in invoices}
+    lines_by_invoice = await _invoice_line_items(db, invoice_ids)
+    tax_lines_by_invoice = await _invoice_tax_lines(db, invoice_ids)
+    outs = []
+    for invoice in invoices:
+        out = InvoiceOut.model_validate(invoice)
+        out.line_items = list(lines_by_invoice.get(invoice.id, ()))
+        out.tax_lines = list(tax_lines_by_invoice.get(invoice.id, ()))
+        outs.append(out)
+    return outs
+
+
 async def _compute_tax(db: AsyncSession, tax_head_id: str | None, tax_amount_override: Decimal | None, subtotal: Decimal, as_of: date_type) -> tuple[Decimal, list[dict]]:
     """§2.3, verbatim: "Tax Amount = Subtotal x the selected head's
     calculation... If no billing tax is configured, hide the Tax dropdown
@@ -352,7 +409,7 @@ async def list_invoices(
         }
         return await list_export.build_export(format, db, current_user, "Invoices", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_invoice_out(db, inv) for inv in filtered]
+    return await _load_invoice_outs(db, filtered)
 
 
 @router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)

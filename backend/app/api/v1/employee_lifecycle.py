@@ -689,6 +689,41 @@ async def _offer_letter_to_out(db: AsyncSession, letter: OfferLetter) -> OfferLe
     return out
 
 
+async def _custom_terms_by_letter(db: AsyncSession, letter_ids: set[str]) -> dict[str, list[OfferLetterCustomTerm]]:
+    """Batch custom-term lookup for the List — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (offer_letter_id, display_order) so each letter's own slice
+    comes back in exactly the display_order the per-letter query produced;
+    the leading letter id only groups, it never reorders within.
+    """
+    if not letter_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(OfferLetterCustomTerm).where(OfferLetterCustomTerm.offer_letter_id.in_(letter_ids))
+            .order_by(OfferLetterCustomTerm.offer_letter_id, OfferLetterCustomTerm.display_order, OfferLetterCustomTerm.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[OfferLetterCustomTerm]] = {}
+    for row in rows:
+        grouped.setdefault(row.offer_letter_id, []).append(row)
+    return grouped
+
+
+async def _offer_letter_to_outs(db: AsyncSession, letters: list[OfferLetter]) -> list[OfferLetterOut]:
+    """List counterpart to _offer_letter_to_out: 1 query in TOTAL rather
+    than 1 per letter. Same output, row for row — a letter with no custom
+    terms still gets the empty list its own query returned.
+    """
+    terms_by_letter = await _custom_terms_by_letter(db, {letter.id for letter in letters})
+    outs = []
+    for letter in letters:
+        out = OfferLetterOut.model_validate(letter)
+        out.custom_terms = list(terms_by_letter.get(letter.id, ()))
+        outs.append(out)
+    return outs
+
+
 def _money_str(v) -> str:
     return f"₹{v:,.2f}" if v is not None else "—"
 
@@ -837,7 +872,7 @@ async def list_offer_letters(
     perms: PermissionSet = Depends(require_screen(OFFER_LETTERS)),
 ) -> list[OfferLetterOut]:
     rows = (await db.execute(select(OfferLetter).where(OfferLetter.employee_id == employee_id))).scalars().all()
-    return [await _offer_letter_to_out(db, r) for r in rows]
+    return await _offer_letter_to_outs(db, list(rows))
 
 
 @router.post("/offer-letters/{letter_id}/custom-terms", response_model=OfferLetterCustomTermOut, status_code=status.HTTP_201_CREATED)

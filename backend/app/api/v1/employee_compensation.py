@@ -102,6 +102,49 @@ async def _to_out(db: AsyncSession, structure: SalaryStructure) -> SalaryStructu
     return out
 
 
+async def _lines_by_structure(db: AsyncSession, structure_ids: set[str]) -> dict[str, list[SalaryStructureStatutoryLine]]:
+    """Batch statutory-line lookup for the history list — one `.in_()` query
+    grouped in Python, the same shape as expenses.py's _employee_names/
+    _vendor_names.
+
+    tax_head_id is the tiebreak, and it is load-bearing rather than
+    decorative: display_order is 0 on EVERY statutory line this app writes,
+    so _load_lines' `ORDER BY display_order` is a total tie and the real
+    order came from the index it read through, ux_ss_statutory_lines
+    (salary_structure_id, tax_head_id). Sorting by display_order alone here
+    reordered the lines of a structure — caught by diffing this loader
+    against the old one row by row. Naming the index's own second column
+    reproduces the order exactly, and pins it against the day display_order
+    starts being populated.
+    """
+    if not structure_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(SalaryStructureStatutoryLine).where(SalaryStructureStatutoryLine.salary_structure_id.in_(structure_ids))
+            .order_by(SalaryStructureStatutoryLine.salary_structure_id, SalaryStructureStatutoryLine.display_order, SalaryStructureStatutoryLine.tax_head_id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[SalaryStructureStatutoryLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.salary_structure_id, []).append(row)
+    return grouped
+
+
+async def _to_outs(db: AsyncSession, structures: list[SalaryStructure]) -> list[SalaryStructureOut]:
+    """List counterpart to _to_out: 1 query in TOTAL rather than 1 per
+    structure. Same output, row for row — a structure with no statutory
+    lines still gets the empty list _load_lines returned for it.
+    """
+    lines_by_structure = await _lines_by_structure(db, {structure.id for structure in structures})
+    outs = []
+    for structure in structures:
+        out = SalaryStructureOut.model_validate(structure)
+        out.statutory_lines = list(lines_by_structure.get(structure.id, ()))
+        outs.append(out)
+    return outs
+
+
 def _recompute_and_apply_totals(structure: SalaryStructure, lines: list[SalaryStructureStatutoryLine]) -> None:
     amounts = [
         StatutoryLineAmount(
@@ -145,7 +188,7 @@ async def list_salary_structures(
             select(SalaryStructure).where(SalaryStructure.employee_id == employee_id).order_by(SalaryStructure.effective_from.desc())
         )
     ).scalars().all()
-    return [await _to_out(db, r) for r in rows]
+    return await _to_outs(db, list(rows))
 
 
 @router.get("/salary-structures/current", response_model=SalaryStructureOut)
@@ -342,6 +385,65 @@ async def _insurance_to_out(db: AsyncSession, enrollment: EmployeeInsuranceEnrol
     return out
 
 
+async def _enrollment_dependents(db: AsyncSession, enrollment_ids: set[str]) -> dict[str, list[InsuranceDependent]]:
+    """Batch dependent/nominee lookup for the enrollment list — one `.in_()`
+    query grouped in Python, the same shape as expenses.py's _employee_names/
+    _vendor_names.
+
+    The order_by is not a new ordering, it PINS the one the per-enrollment
+    query already produced: `WHERE employee_insurance_enrollment_id = ?`
+    reads through ix_insurance_dependents_enrollment, whose InnoDB entries
+    carry the primary key, so an enrollment's dependents always came back in
+    id order. Naming those columns keeps each slice byte-identical AND keeps
+    MySQL reading the same index instead of sorting.
+    """
+    if not enrollment_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(InsuranceDependent).where(InsuranceDependent.employee_insurance_enrollment_id.in_(enrollment_ids))
+            .order_by(InsuranceDependent.employee_insurance_enrollment_id, InsuranceDependent.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[InsuranceDependent]] = {}
+    for row in rows:
+        grouped.setdefault(row.employee_insurance_enrollment_id, []).append(row)
+    return grouped
+
+
+async def _enrollment_nominees(db: AsyncSession, enrollment_ids: set[str]) -> dict[str, list[InsuranceNominee]]:
+    if not enrollment_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(InsuranceNominee).where(InsuranceNominee.employee_insurance_enrollment_id.in_(enrollment_ids))
+            .order_by(InsuranceNominee.employee_insurance_enrollment_id, InsuranceNominee.id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[InsuranceNominee]] = {}
+    for row in rows:
+        grouped.setdefault(row.employee_insurance_enrollment_id, []).append(row)
+    return grouped
+
+
+async def _insurance_to_outs(db: AsyncSession, enrollments: list[EmployeeInsuranceEnrollment]) -> list[InsuranceEnrollmentOut]:
+    """List counterpart to _insurance_to_out: 2 queries in TOTAL rather than
+    2 per enrollment. Same output, row for row — an enrollment with no
+    dependents/no nominees still gets the empty lists its own queries
+    returned.
+    """
+    enrollment_ids = {enrollment.id for enrollment in enrollments}
+    dependents_by_enrollment = await _enrollment_dependents(db, enrollment_ids)
+    nominees_by_enrollment = await _enrollment_nominees(db, enrollment_ids)
+    outs = []
+    for enrollment in enrollments:
+        out = InsuranceEnrollmentOut.model_validate(enrollment)
+        out.dependents = list(dependents_by_enrollment.get(enrollment.id, ()))
+        out.nominees = list(nominees_by_enrollment.get(enrollment.id, ()))
+        outs.append(out)
+    return outs
+
+
 @router.get("/insurance-enrollments", response_model=list[InsuranceEnrollmentOut])
 async def list_insurance_enrollments(
     employee_id: str,
@@ -351,7 +453,7 @@ async def list_insurance_enrollments(
     rows = (
         await db.execute(select(EmployeeInsuranceEnrollment).where(EmployeeInsuranceEnrollment.employee_id == employee_id))
     ).scalars().all()
-    return [await _insurance_to_out(db, r) for r in rows]
+    return await _insurance_to_outs(db, list(rows))
 
 
 @router.post("/insurance-enrollments", response_model=InsuranceEnrollmentOut, status_code=status.HTTP_201_CREATED)

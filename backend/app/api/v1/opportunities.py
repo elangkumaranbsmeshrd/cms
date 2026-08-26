@@ -514,6 +514,33 @@ async def _load_opportunity_file_out(db: AsyncSession, row: OpportunityFile) -> 
     )
 
 
+async def _load_opportunity_file_outs(db: AsyncSession, files: list[OpportunityFile]) -> list[OpportunityFileOut]:
+    """List counterpart to _load_opportunity_file_out: one `.in_()` query for
+    every attachment's StoredFile instead of one db.get each — same
+    batch-then-join-in-Python shape as expenses.py's _employee_names/
+    _vendor_names, and the same shape assets.py's _load_asset_file_outs and
+    customers.py's _load_customer_file_outs use. A row whose StoredFile is
+    missing simply isn't in the mapping, which is the same `stored is None`
+    the per-row db.get returned — the blank name/type and zero size, never a
+    KeyError and never a dropped attachment.
+    """
+    if not files:
+        return []
+    stored_rows = (await db.execute(select(StoredFile).where(StoredFile.id.in_({f.stored_file_id for f in files})))).scalars().all()
+    stored_by_id = {stored.id: stored for stored in stored_rows}
+    outs = []
+    for row in files:
+        stored = stored_by_id.get(row.stored_file_id)
+        outs.append(
+            OpportunityFileOut(
+                id=row.id, opportunity_id=row.opportunity_id, stored_file_id=row.stored_file_id,
+                original_filename=stored.original_filename if stored else "", mime_type=stored.mime_type if stored else "",
+                size_bytes=stored.size_bytes if stored else 0, created_by=row.created_by, created_at=row.created_at,
+            )
+        )
+    return outs
+
+
 @router.get("/{opportunity_id}/files", response_model=list[OpportunityFileOut])
 async def list_files(
     opportunity_id: str,
@@ -526,7 +553,7 @@ async def list_files(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Opportunity not found")
     await _assert_opportunity_owned_if_restricted(db, current_user, perms, opportunity)
     rows = (await db.execute(select(OpportunityFile).where(OpportunityFile.opportunity_id == opportunity_id))).scalars().all()
-    return [await _load_opportunity_file_out(db, r) for r in rows]
+    return await _load_opportunity_file_outs(db, list(rows))
 
 
 @router.post("/{opportunity_id}/files", response_model=OpportunityFileOut, status_code=status.HTTP_201_CREATED)

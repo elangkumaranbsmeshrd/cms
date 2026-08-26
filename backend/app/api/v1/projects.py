@@ -206,6 +206,47 @@ async def _load_project_out(db: AsyncSession, project: Project, *, hide_budget: 
     return out
 
 
+async def _project_member_ids(db: AsyncSession, project_ids: set[str]) -> dict[str, list[str]]:
+    """Batch member lookup for the Directory — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+
+    The order_by is not a new ordering, it PINS the one the per-project query
+    already produced: `WHERE project_id = ?` reads through
+    ux_projmembers_pair (project_id, employee_id), so a project's members
+    always came back in employee_id order. Naming that index's own columns
+    keeps each project's slice byte-identical AND keeps MySQL reading the
+    same index instead of sorting.
+    """
+    if not project_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(ProjectMember.project_id, ProjectMember.employee_id).where(ProjectMember.project_id.in_(project_ids))
+            .order_by(ProjectMember.project_id, ProjectMember.employee_id)
+        )
+    ).all()
+    grouped: dict[str, list[str]] = {}
+    for project_id, employee_id in rows:
+        grouped.setdefault(project_id, []).append(employee_id)
+    return grouped
+
+
+async def _load_project_outs(db: AsyncSession, projects: list[Project], *, hide_budget: bool = False) -> list[ProjectOut]:
+    """List counterpart to _load_project_out: 1 query in TOTAL rather than 1
+    per project. Same output, row for row — a project with no members still
+    gets the empty member_ids list its own query returned.
+    """
+    member_ids_by_project = await _project_member_ids(db, {project.id for project in projects})
+    outs = []
+    for project in projects:
+        out = ProjectOut.model_validate(project)
+        out.member_ids = list(member_ids_by_project.get(project.id, ()))
+        if hide_budget:
+            out.budget = None
+        outs.append(out)
+    return outs
+
+
 # ================================================================= DIRECTORY
 @router.get("/projects", response_model=None)
 async def list_projects(
@@ -322,7 +363,7 @@ async def list_projects(
         }
         return await list_export.build_export(format, db, current_user, "Projects", _PROJECT_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_project_out(db, row, hide_budget=hide_budget) for row in rows]
+    return await _load_project_outs(db, list(rows), hide_budget=hide_budget)
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
@@ -448,6 +489,53 @@ async def _load_task_out(db: AsyncSession, task: Task) -> TaskOut:
     return out
 
 
+async def _task_subtasks(db: AsyncSession, task_ids: set[str]) -> dict[str, list[TaskSubtask]]:
+    """Batch subtask lookup for the Board — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (task_id, sequence) so each task's own slice comes back in
+    exactly the sequence order _load_task_out's per-task query produced; the
+    leading task_id only groups, it never reorders within.
+    """
+    if not task_ids:
+        return {}
+    rows = (
+        await db.execute(select(TaskSubtask).where(TaskSubtask.task_id.in_(task_ids)).order_by(TaskSubtask.task_id, TaskSubtask.sequence, TaskSubtask.id))
+    ).scalars().all()
+    grouped: dict[str, list[TaskSubtask]] = {}
+    for row in rows:
+        grouped.setdefault(row.task_id, []).append(row)
+    return grouped
+
+
+async def _task_comments(db: AsyncSession, task_ids: set[str]) -> dict[str, list[TaskComment]]:
+    if not task_ids:
+        return {}
+    rows = (
+        await db.execute(select(TaskComment).where(TaskComment.task_id.in_(task_ids)).order_by(TaskComment.task_id, TaskComment.created_at, TaskComment.id))
+    ).scalars().all()
+    grouped: dict[str, list[TaskComment]] = {}
+    for row in rows:
+        grouped.setdefault(row.task_id, []).append(row)
+    return grouped
+
+
+async def _load_task_outs(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
+    """List counterpart to _load_task_out: 2 queries in TOTAL rather than 2
+    per task. Same output, row for row — a task with no subtasks/no comments
+    still gets the empty lists its own two queries returned.
+    """
+    task_ids = {task.id for task in tasks}
+    subtasks_by_task = await _task_subtasks(db, task_ids)
+    comments_by_task = await _task_comments(db, task_ids)
+    outs = []
+    for task in tasks:
+        out = TaskOut.model_validate(task)
+        out.subtasks = list(subtasks_by_task.get(task.id, ()))
+        out.comments = list(comments_by_task.get(task.id, ()))
+        outs.append(out)
+    return outs
+
+
 @router.get("/projects/{project_id}/tasks", response_model=None)
 async def list_tasks(
     project_id: str,
@@ -516,7 +604,7 @@ async def list_tasks(
         }
         return await list_export.build_export(format, db, current_user, "Task Board", _TASK_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_task_out(db, row) for row in rows]
+    return await _load_task_outs(db, list(rows))
 
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -814,6 +902,37 @@ async def _load_bug_out(db: AsyncSession, bug: Bug) -> BugOut:
     return out
 
 
+async def _bug_comments(db: AsyncSession, bug_ids: set[str]) -> dict[str, list[BugComment]]:
+    """Batch comment lookup for the Bug list — one `.in_()` query grouped in
+    Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Ordered by (bug_id, created_at) so each bug's own slice comes back in
+    exactly the created_at order _load_bug_out's per-bug query produced.
+    """
+    if not bug_ids:
+        return {}
+    rows = (
+        await db.execute(select(BugComment).where(BugComment.bug_id.in_(bug_ids)).order_by(BugComment.bug_id, BugComment.created_at, BugComment.id))
+    ).scalars().all()
+    grouped: dict[str, list[BugComment]] = {}
+    for row in rows:
+        grouped.setdefault(row.bug_id, []).append(row)
+    return grouped
+
+
+async def _load_bug_outs(db: AsyncSession, bugs: list[Bug]) -> list[BugOut]:
+    """List counterpart to _load_bug_out: 1 query in TOTAL rather than 1 per
+    bug. Same output, row for row — a bug with no comments still gets the
+    empty list its own query returned.
+    """
+    comments_by_bug = await _bug_comments(db, {bug.id for bug in bugs})
+    outs = []
+    for bug in bugs:
+        out = BugOut.model_validate(bug)
+        out.comments = list(comments_by_bug.get(bug.id, ()))
+        outs.append(out)
+    return outs
+
+
 @router.get("/projects/{project_id}/bugs", response_model=None)
 async def list_bugs(
     project_id: str,
@@ -882,7 +1001,7 @@ async def list_bugs(
         }
         return await list_export.build_export(format, db, current_user, "Bugs", _BUG_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_bug_out(db, row) for row in rows]
+    return await _load_bug_outs(db, list(rows))
 
 
 @router.post("/projects/{project_id}/bugs", response_model=BugOut, status_code=status.HTTP_201_CREATED)
@@ -991,6 +1110,66 @@ async def _load_milestone_out(db: AsyncSession, milestone: Milestone) -> Milesto
     return out
 
 
+async def _milestone_linked_task_ids(db: AsyncSession, milestone_ids: set[str]) -> dict[str, list[str]]:
+    """Batch linked-task lookup for the Milestones list — one `.in_()` query
+    grouped in Python, the same shape as expenses.py's _employee_names/
+    _vendor_names.
+
+    The order_by is not a new ordering, it PINS the one the per-milestone
+    query already produced: `WHERE milestone_id = ?` reads through
+    ux_milestonetasks_pair (milestone_id, task_id), so a milestone's links
+    always came back in task_id order. Naming that index's own columns keeps
+    each milestone's slice byte-identical AND keeps MySQL reading the same
+    index instead of sorting.
+    """
+    if not milestone_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(MilestoneTask.milestone_id, MilestoneTask.task_id).where(MilestoneTask.milestone_id.in_(milestone_ids))
+            .order_by(MilestoneTask.milestone_id, MilestoneTask.task_id)
+        )
+    ).all()
+    grouped: dict[str, list[str]] = {}
+    for milestone_id, task_id in rows:
+        grouped.setdefault(milestone_id, []).append(task_id)
+    return grouped
+
+
+async def _task_statuses(db: AsyncSession, task_ids: set[str]) -> dict[str, str]:
+    if not task_ids:
+        return {}
+    rows = (await db.execute(select(Task.id, Task.status).where(Task.id.in_(task_ids)))).all()
+    return {task_id: status_value for task_id, status_value in rows}
+
+
+async def _load_milestone_outs(db: AsyncSession, milestones: list[Milestone]) -> list[MilestoneOut]:
+    """List counterpart to _load_milestone_out: 2 queries in TOTAL rather
+    than 3 per milestone (its own linked-task query plus the two inside
+    project_engine.milestone_progress, which re-read the same links).
+
+    milestone_progress's exact arithmetic is reproduced here, not
+    approximated: a milestone with NO links stays None (no tasks_done/
+    tasks_total at all, not 0/0), the total counts tasks that actually
+    EXIST — its `Task.id.in_(task_ids)` silently drops a link to a deleted
+    task — and a duplicate link counts once, because `IN` returns that task
+    row once.
+    """
+    linked_by_milestone = await _milestone_linked_task_ids(db, {milestone.id for milestone in milestones})
+    all_task_ids = {task_id for linked in linked_by_milestone.values() for task_id in linked}
+    status_by_task = await _task_statuses(db, all_task_ids)
+    outs = []
+    for milestone in milestones:
+        linked = linked_by_milestone.get(milestone.id, [])
+        out = MilestoneOut.model_validate(milestone)
+        out.linked_task_ids = list(linked)
+        if linked:
+            statuses = [status_by_task[task_id] for task_id in set(linked) if task_id in status_by_task]
+            out.tasks_done, out.tasks_total = sum(1 for s in statuses if s == "DONE"), len(statuses)
+        outs.append(out)
+    return outs
+
+
 async def _flip_overdue_milestones(db: AsyncSession, milestones: list[Milestone]) -> None:
     """A174: "Missed is set automatically when Target Date passes while
     still Upcoming" — lazily materialized on read (see 0006_operations.py's
@@ -1049,7 +1228,7 @@ async def list_milestones(
         }
         return await list_export.build_export(format, db, current_user, "Milestones", _MILESTONE_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_milestone_out(db, row) for row in rows]
+    return await _load_milestone_outs(db, list(rows))
 
 
 @router.post("/projects/{project_id}/milestones", response_model=MilestoneOut, status_code=status.HTTP_201_CREATED)
@@ -1580,7 +1759,7 @@ async def my_projects(
         }
         return await list_export.build_export(format, db, current_user, "My Projects", _MY_PROJECTS_LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_project_out(db, row) for row in rows]
+    return await _load_project_outs(db, list(rows))
 
 
 @router.get("/employees/me/tasks-and-bugs", response_model=None)

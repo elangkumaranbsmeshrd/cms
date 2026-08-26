@@ -506,6 +506,38 @@ async def _load_asset_file_out(db: AsyncSession, row: AssetFile) -> AssetFileOut
     )
 
 
+async def _stored_files(db: AsyncSession, stored_file_ids: set[str]) -> dict[str, StoredFile]:
+    """Batch StoredFile lookup for the file list — one `.in_()` query keyed
+    in Python, the same shape as expenses.py's _employee_names/_vendor_names,
+    instead of one db.get per attachment. A row whose StoredFile is missing
+    simply isn't in the mapping, which is the same `stored is None` the
+    per-row db.get returned — the blank name/type and zero size, never a
+    KeyError and never a dropped attachment.
+    """
+    if not stored_file_ids:
+        return {}
+    rows = (await db.execute(select(StoredFile).where(StoredFile.id.in_(stored_file_ids)))).scalars().all()
+    return {row.id: row for row in rows}
+
+
+async def _load_asset_file_outs(db: AsyncSession, files: list[AssetFile]) -> list[AssetFileOut]:
+    """List counterpart to _load_asset_file_out: 1 query in TOTAL rather
+    than 1 per attachment.
+    """
+    stored_by_id = await _stored_files(db, {f.stored_file_id for f in files})
+    outs = []
+    for row in files:
+        stored = stored_by_id.get(row.stored_file_id)
+        outs.append(
+            AssetFileOut(
+                id=row.id, asset_id=row.asset_id, stored_file_id=row.stored_file_id,
+                original_filename=stored.original_filename if stored else "", mime_type=stored.mime_type if stored else "",
+                size_bytes=stored.size_bytes if stored else 0, created_by=row.created_by, created_at=row.created_at,
+            )
+        )
+    return outs
+
+
 @router.get("/assets/{asset_id}/files", response_model=None)
 async def list_asset_files(
     asset_id: str,
@@ -515,7 +547,7 @@ async def list_asset_files(
 ) -> list[AssetFileOut]:
     await _get_asset_scoped(db, asset_id, perms, current_user)
     rows = (await db.execute(select(AssetFile).where(AssetFile.asset_id == asset_id).order_by(AssetFile.created_at.desc()))).scalars().all()
-    return [await _load_asset_file_out(db, r) for r in rows]
+    return await _load_asset_file_outs(db, list(rows))
 
 
 @router.post("/assets/{asset_id}/files", response_model=AssetFileOut, status_code=status.HTTP_201_CREATED)

@@ -80,8 +80,14 @@ async def _reference_counts(db: AsyncSession) -> dict[str, int]:
     return {scheme_id: count for scheme_id, count in rows}
 
 
-async def _to_out(db: AsyncSession, row: TaxScheme, perms: PermissionSet) -> dict:
-    counts = await _reference_counts(db)
+async def _to_out(db: AsyncSession, row: TaxScheme, perms: PermissionSet, counts: dict[str, int] | None = None) -> dict:
+    # The List passes the grouped counts in so the scan runs once for the
+    # whole page rather than once per scheme — the same pre-resolve-and-hand-
+    # it-down shape masters_bank_accounts.py's own `referenced` set uses.
+    # Single-row callers still omit it and pay for their own scan, exactly as
+    # _reference_counts' docstring already allows.
+    if counts is None:
+        counts = await _reference_counts(db)
     out = TaxSchemeOut.model_validate(row)
     out.declaration_heads_count = counts.get(row.id, 0)
     out.is_referenced = row.id in counts
@@ -135,7 +141,8 @@ async def list_tax_schemes(
         ]
         return await list_export.build_export(format, db, current_user, "Tax Schemes", _LIST_COLUMNS, export_rows, {"include_inactive": include_inactive})
 
-    return [await _to_out(db, r, perms) for r in rows]
+    counts = await _reference_counts(db)
+    return [await _to_out(db, r, perms, counts) for r in rows]
 
 
 @router.post("", response_model=None, status_code=status.HTTP_201_CREATED)

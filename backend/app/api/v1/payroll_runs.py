@@ -539,6 +539,49 @@ async def _load_run_out(db: AsyncSession, run: PayrollRun) -> PayrollRunOut:
     return out
 
 
+async def _run_employees(db: AsyncSession, run_ids: set[str]) -> dict[str, list[PayrollRunEmployee]]:
+    """Batch run-employee lookup for the Run History — one `.in_()` query
+    grouped in Python, the same shape as expenses.py's _employee_names/
+    _vendor_names.
+
+    The order_by is not a new ordering, it PINS the one the per-run query
+    already produced: `WHERE payroll_run_id = ?` reads through
+    ux_prempl_run_employee (payroll_run_id, employee_id), so a run's
+    employees always came back in employee_id order. Naming that index's own
+    columns keeps each run's slice byte-identical AND keeps MySQL reading the
+    same index instead of sorting.
+    """
+    if not run_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PayrollRunEmployee).where(PayrollRunEmployee.payroll_run_id.in_(run_ids))
+            .order_by(PayrollRunEmployee.payroll_run_id, PayrollRunEmployee.employee_id)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PayrollRunEmployee]] = {}
+    for row in rows:
+        grouped.setdefault(row.payroll_run_id, []).append(row)
+    return grouped
+
+
+async def _load_run_outs(db: AsyncSession, runs: list[PayrollRun]) -> list[PayrollRunOut]:
+    """List counterpart to _load_run_out: 1 query in TOTAL rather than 1 per
+    run. Same output, row for row — a run with no employees still gets the
+    empty list, and _effective_status still speaks for every run (a
+    discarded one must not read as a live Draft just because it was
+    rendered in a batch).
+    """
+    employees_by_run = await _run_employees(db, {run.id for run in runs})
+    outs = []
+    for run in runs:
+        out = PayrollRunOut.model_validate(run)
+        out.status = _effective_status(run)
+        out.employees = list(employees_by_run.get(run.id, ()))
+        outs.append(out)
+    return outs
+
+
 @router.get("", response_model=None)
 async def list_payroll_runs(
     db: AsyncSession = Depends(get_db),
@@ -620,7 +663,7 @@ async def list_payroll_runs(
         }
         return await list_export.build_export(format, db, current_user, "Payroll Run History", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _load_run_out(db, r) for r in runs]
+    return await _load_run_outs(db, list(runs))
 
 
 @router.get("/{run_id}", response_model=PayrollRunOut)

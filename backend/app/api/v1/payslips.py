@@ -88,6 +88,83 @@ async def _to_out(db: AsyncSession, payslip: Payslip, obscure_adhoc_labels: bool
     return out
 
 
+async def _payslip_earning_lines(db: AsyncSession, payslip_ids: set[str]) -> dict[str, list[PayslipEarningLine]]:
+    """Batch line lookup for the payslip Lists — one `.in_()` query grouped
+    in Python, the same shape as expenses.py's _employee_names/_vendor_names.
+    Carries the SAME show_on_payslip filter the per-payslip query applied
+    (a hidden line must stay hidden), and orders by (payslip_id, sequence)
+    so each payslip's own slice keeps the sequence order it had; the leading
+    payslip_id only groups, it never reorders within.
+    """
+    if not payslip_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PayslipEarningLine).where(PayslipEarningLine.payslip_id.in_(payslip_ids), PayslipEarningLine.show_on_payslip.is_(True))
+            .order_by(PayslipEarningLine.payslip_id, PayslipEarningLine.sequence)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PayslipEarningLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.payslip_id, []).append(row)
+    return grouped
+
+
+async def _payslip_statutory_lines(db: AsyncSession, payslip_ids: set[str]) -> dict[str, list[PayslipStatutoryLine]]:
+    if not payslip_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PayslipStatutoryLine).where(PayslipStatutoryLine.payslip_id.in_(payslip_ids), PayslipStatutoryLine.show_on_payslip_snapshot.is_(True))
+            .order_by(PayslipStatutoryLine.payslip_id, PayslipStatutoryLine.sequence)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PayslipStatutoryLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.payslip_id, []).append(row)
+    return grouped
+
+
+async def _payslip_adjustment_lines(db: AsyncSession, payslip_ids: set[str]) -> dict[str, list[PayslipAdjustmentLine]]:
+    if not payslip_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(PayslipAdjustmentLine).where(PayslipAdjustmentLine.payslip_id.in_(payslip_ids))
+            .order_by(PayslipAdjustmentLine.payslip_id, PayslipAdjustmentLine.sequence)
+        )
+    ).scalars().all()
+    grouped: dict[str, list[PayslipAdjustmentLine]] = {}
+    for row in rows:
+        grouped.setdefault(row.payslip_id, []).append(row)
+    return grouped
+
+
+async def _to_outs(db: AsyncSession, payslips: list[Payslip], obscure_adhoc_labels: bool = False) -> list[PayslipOut]:
+    """List counterpart to _to_out: 3 queries in TOTAL rather than 3 per
+    payslip. The §6.1 "Hide Ad-hoc Adjustment Labels from Employee" masking
+    is applied here too, on exactly the same rows and on the same
+    SELF-SERVICE-only condition — batching must not be a way for a real
+    Label to leak past a toggle that is on.
+    """
+    payslip_ids = {payslip.id for payslip in payslips}
+    earning_by_payslip = await _payslip_earning_lines(db, payslip_ids)
+    statutory_by_payslip = await _payslip_statutory_lines(db, payslip_ids)
+    adjustment_by_payslip = await _payslip_adjustment_lines(db, payslip_ids)
+    if obscure_adhoc_labels:
+        for lines in adjustment_by_payslip.values():
+            for line in lines:
+                line.label_snapshot = "Adjustment"
+    outs = []
+    for payslip in payslips:
+        out = PayslipOut.model_validate(payslip)
+        out.earning_lines = list(earning_by_payslip.get(payslip.id, ()))
+        out.statutory_lines = list(statutory_by_payslip.get(payslip.id, ()))
+        out.adjustment_lines = list(adjustment_by_payslip.get(payslip.id, ()))
+        outs.append(out)
+    return outs
+
+
 # ================================================================ MY PAYSLIPS
 @router.get("/payslips/me", response_model=list[PayslipOut])
 async def list_my_payslips(
@@ -144,7 +221,7 @@ async def list_my_payslips(
         return await list_export.build_export(format, db, current_user, "My Payslips", _MY_LIST_COLUMNS, export_rows, filters_applied)
 
     obscure = await _hide_adhoc_labels_from_employee(db)
-    return [await _to_out(db, r, obscure_adhoc_labels=obscure) for r in rows]
+    return await _to_outs(db, list(rows), obscure_adhoc_labels=obscure)
 
 
 @router.get("/payslips/me/{payslip_id}", response_model=PayslipOut)
@@ -244,7 +321,7 @@ async def list_all_payslips(
         }
         return await list_export.build_export(format, db, current_user, "Payslips", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [await _to_out(db, r) for r in rows]
+    return await _to_outs(db, list(rows))
 
 
 @router.get("/payslips/{payslip_id}", response_model=PayslipOut)
