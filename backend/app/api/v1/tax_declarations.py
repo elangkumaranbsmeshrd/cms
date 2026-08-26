@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
 from app.core.db import get_db
+from app.services import fy_lock
 from app.models.employee import (
     Employee,
     EmployeeTaxSchemeElection,
@@ -303,6 +304,11 @@ async def update_declaration_line(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     declaration = await db.get(TaxDeclaration, line.tax_declaration_id)
     await _guard_own_or_manage(db, current_user, perms, declaration.employee_id)
+    # THE LOCK RULE (APPENDIX-B:13). tax_declaration_lines carries NO FY-lock
+    # trigger, so before this guard existed a declared amount inside a frozen
+    # year could be rewritten by anyone — including the plain Employee whose
+    # declaration it is — and that figure feeds the income-tax calculation.
+    await fy_lock.assert_fy_not_locked(db, declaration.financial_year_id, what="This tax declaration")
     if declaration.status != "DRAFT":
         raise HTTPException(status.HTTP_409_CONFLICT, detail="This declaration has been submitted — only verification fields may still change")
 

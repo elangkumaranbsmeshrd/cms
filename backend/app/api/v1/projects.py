@@ -22,7 +22,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
+from types import SimpleNamespace
+
 from app.core.db import get_db
+from app.core.serialization.masking import apply_field_masking
 from app.models.customer import Customer
 from app.models.employee import Employee
 from app.models.project import Bug, BugComment, Milestone, MilestoneTask, Project, ProjectMember, Sprint, Task, TaskComment, TaskSubtask, TimesheetEntry
@@ -173,6 +176,40 @@ async def _hide_budget_from_employee(db: AsyncSession) -> bool:
     return await _toggle_enabled(db, "Hide Budget from Employee's Project View")
 
 
+def _mask(payload: dict, field_modes: dict[str, str] | None) -> dict:
+    """apply_field_masking takes a PermissionSet; these loaders are handed the
+    already-resolved modes, so wrap them in the shape it expects."""
+    if not field_modes:
+        return payload
+    return apply_field_masking(payload, SimpleNamespace(field_modes=field_modes))
+
+
+async def _budget_field_modes(db: AsyncSession, perms: PermissionSet) -> dict[str, str]:
+    """The field modes that actually govern this screen's Budget column.
+
+    Two bugs lived in the old hand-rolled `out.budget = None`:
+
+    1. It ignored Layer 3 entirely. registry/screens.py declares
+       project.directory sensitive_fields=("budget",), so rbac_admin ACCEPTS a
+       Permission-Matrix write of budget='hide' and resolver.py resolves it —
+       and this router then threw that away, so an administrator hiding the
+       field got a success response and no change. A control that reports
+       success and does nothing is worse than no control.
+    2. Nulling is not hiding. masking.py's 'hide' POPS the key; setting it to
+       None leaves `"budget": null` in the body, which still tells the reader
+       the field exists and is theirs to ask about.
+
+    Both are fixed by resolving the modes here and letting apply_field_masking
+    do the work. The toggle is kept as an ADDITIONAL source of a hide rather
+    than the only one, so an explicit matrix hide and the toggle can each
+    close the field independently.
+    """
+    modes = dict(perms.field_modes)
+    if "budget" not in modes and perms.role_code == "EMPLOYEE" and await _hide_budget_from_employee(db):
+        modes["budget"] = "hide"
+    return modes
+
+
 async def _resolve_project_perms(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -197,13 +234,16 @@ async def _resolve_project_perms(
     return await resolve_permission(db, current_user, DIRECTORY_SCREEN, preview_role_id=preview_role_id)
 
 
-async def _load_project_out(db: AsyncSession, project: Project, *, hide_budget: bool = False) -> ProjectOut:
+async def _load_project_out(db: AsyncSession, project: Project, *, field_modes: dict[str, str] | None = None) -> dict:
+    """Returns a DICT, not a ProjectOut: masking removes keys, and a declared
+    response_model would resurrect a popped key as null. Both callers declare
+    response_model=None for exactly that reason (the same sharp edge assets.py
+    and vendors.py carry comments about).
+    """
     member_ids = (await db.execute(select(ProjectMember.employee_id).where(ProjectMember.project_id == project.id))).scalars().all()
     out = ProjectOut.model_validate(project)
     out.member_ids = list(member_ids)
-    if hide_budget:
-        out.budget = None
-    return out
+    return _mask(out.model_dump(), field_modes)
 
 
 async def _project_member_ids(db: AsyncSession, project_ids: set[str]) -> dict[str, list[str]]:
@@ -231,7 +271,7 @@ async def _project_member_ids(db: AsyncSession, project_ids: set[str]) -> dict[s
     return grouped
 
 
-async def _load_project_outs(db: AsyncSession, projects: list[Project], *, hide_budget: bool = False) -> list[ProjectOut]:
+async def _load_project_outs(db: AsyncSession, projects: list[Project], *, field_modes: dict[str, str] | None = None) -> list[dict]:
     """List counterpart to _load_project_out: 1 query in TOTAL rather than 1
     per project. Same output, row for row — a project with no members still
     gets the empty member_ids list its own query returned.
@@ -241,9 +281,7 @@ async def _load_project_outs(db: AsyncSession, projects: list[Project], *, hide_
     for project in projects:
         out = ProjectOut.model_validate(project)
         out.member_ids = list(member_ids_by_project.get(project.id, ()))
-        if hide_budget:
-            out.budget = None
-        outs.append(out)
+        outs.append(_mask(out.model_dump(), field_modes))
     return outs
 
 
@@ -330,7 +368,7 @@ async def list_projects(
         stmt = stmt.where(Project.id.in_(team_ids))
     rows = (await db.execute(stmt.order_by(Project.start_date))).scalars().all()
 
-    hide_budget = perms.role_code == "EMPLOYEE" and await _hide_budget_from_employee(db)
+    field_modes = await _budget_field_modes(db, perms)
 
     if format:
         # RBAC §2.2(f): export exactly the filtered/scoped set on screen —
@@ -349,7 +387,10 @@ async def list_projects(
             {
                 "project_code": r.project_code, "project_name": r.project_name, "customer": customers.get(r.customer_id),
                 "status": r.status, "lead": leads.get(r.project_lead_id), "start_date": r.start_date,
-                "end_date": r.end_date, "budget": (None if hide_budget else r.budget),
+                # Layer 3 applies to the FILE too, not just the JSON. The doc's
+                # matrix item 6: "a role's export must contain exactly the
+                # columns its screen shows".
+                "end_date": r.end_date, "budget": (None if "budget" in field_modes else r.budget),
             }
             for r in rows
         ]
@@ -363,7 +404,7 @@ async def list_projects(
         }
         return await list_export.build_export(format, db, current_user, "Projects", _PROJECT_LIST_COLUMNS, export_rows, filters_applied)
 
-    return await _load_project_outs(db, list(rows), hide_budget=hide_budget)
+    return await _load_project_outs(db, list(rows), field_modes=field_modes)
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
@@ -428,8 +469,8 @@ async def get_project(
     """
     if perms.visible:
         project = await _get_project_scoped(db, project_id, perms, current_user)
-        hide_budget = perms.role_code == "EMPLOYEE" and await _hide_budget_from_employee(db)
-        return await _load_project_out(db, project, hide_budget=hide_budget)
+        field_modes = await _budget_field_modes(db, perms)
+        return await _load_project_out(db, project, field_modes=field_modes)
     if perms.role_code == "ACCOUNTANT" and await _toggle_enabled(db, "Give Accountant Read Access to Project Budgets"):
         project = await db.get(Project, project_id)
         if project is None:

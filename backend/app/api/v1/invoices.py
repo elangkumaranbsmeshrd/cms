@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
 from app.core.db import get_db
+from app.services import fy_lock
 from app.models.customer import Customer
 from app.models.finance import Invoice, InvoiceLineItem, InvoicePayment, InvoiceTaxLine
 from app.models.masters import BankAccount, HsnSacCode, PaymentMode, TaxHead
@@ -433,6 +434,10 @@ async def create_invoice(
         if project.customer_id != body.customer_id:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Project does not belong to this Customer")
     fy = await get_current_financial_year(db)
+    # THE LOCK RULE covers ADDING too, not just editing: "nothing dated inside
+    # it can be added, edited or deleted by anyone". Guarded before the number
+    # is allocated, so a refused create does not burn a running number.
+    await fy_lock.assert_fy_not_locked(db, fy.id, what="A new invoice")
     number = await allocate_number(db, "INV", fy.id, fy.label)
 
     subtotal = sum((li.quantity * li.rate for li in body.line_items), Decimal("0"))
@@ -582,6 +587,10 @@ async def update_invoice(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if invoice.is_locked:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="A Paid invoice is locked — corrections go through a Credit Note, never a direct edit")
+    # Invoice.is_locked is the PAID lock, a different rule from THE LOCK RULE.
+    # This route checked the first and never the second, so an invoice inside a
+    # frozen Financial Year was editable as long as it was unpaid.
+    await fy_lock.assert_fy_not_locked(db, invoice.financial_year_id, what="This invoice")
     if body.customer_id != invoice.customer_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Customer cannot be changed after creation")
     # project_id gets the same "locked after creation" treatment as

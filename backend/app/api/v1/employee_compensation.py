@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
 from app.core.db import get_db
+from app.core.serialization.masking import apply_field_masking
 from app.models.employee import (
     Employee,
     EmployeeInsuranceEnrollment,
@@ -235,26 +236,34 @@ def _recompute_and_apply_totals(structure: SalaryStructure, lines: list[SalarySt
 
 
 # ========================================================= SALARY STRUCTURE
-@router.get("/salary-structures", response_model=list[SalaryStructureOut])
+# response_model=None: masking POPS a hidden key, and a declared
+# response_model would resurrect it as null (or 500 on a required field) —
+# the same sharp edge assets.py and vendors.py both carry comments about.
+@router.get("/salary-structures", response_model=None)
 async def list_salary_structures(
     employee_id: str,
     db: AsyncSession = Depends(get_db),
     perms: PermissionSet = Depends(require_screen(SALARY_STRUCTURE)),
-) -> list[SalaryStructureOut]:
+) -> list[dict]:
     rows = (
         await db.execute(
             select(SalaryStructure).where(SalaryStructure.employee_id == employee_id).order_by(SalaryStructure.effective_from.desc())
         )
     ).scalars().all()
-    return await _to_outs(db, list(rows))
+    # Layer 3 on the screen carrying the most sensitive numbers in the app.
+    # These routes previously served every figure unmasked to anyone who held
+    # the screen, and a field mode written into the Permission Matrix was
+    # resolved and then silently discarded.
+    outs = await _to_outs(db, list(rows))
+    return [apply_field_masking(o.model_dump(), perms) for o in outs]
 
 
-@router.get("/salary-structures/current", response_model=SalaryStructureOut)
+@router.get("/salary-structures/current", response_model=None)
 async def get_current_salary_structure(
     employee_id: str,
     db: AsyncSession = Depends(get_db),
     perms: PermissionSet = Depends(require_screen(SALARY_STRUCTURE)),
-) -> SalaryStructureOut:
+) -> dict:
     row = (
         await db.execute(
             select(SalaryStructure).where(SalaryStructure.employee_id == employee_id, SalaryStructure.effective_to.is_(None))
@@ -262,7 +271,7 @@ async def get_current_salary_structure(
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No current Salary Structure for this employee")
-    return await _to_out(db, row)
+    return apply_field_masking((await _to_out(db, row)).model_dump(), perms)
 
 
 @router.post("/salary-structures", response_model=SalaryStructureOut, status_code=status.HTTP_201_CREATED)

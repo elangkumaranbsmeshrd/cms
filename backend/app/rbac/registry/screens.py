@@ -123,9 +123,29 @@ SCREENS: dict[str, ScreenDef] = {
     # §2.2 Salary Structure tab: Super Admin edits everything; Accountant may
     # edit ONLY the per-line Applicable toggles (edit_applicability) — the
     # one deliberate exception to "Salary Structure is Super Admin only".
+    # sensitive_fields was EMPTY here, which meant Layer 3 did not exist on the
+    # screen that carries the most sensitive numbers in the app. The field
+    # wasn't merely un-restricted by default — it was ungovernable: with no
+    # ScreenSensitiveField rows, the Permission Matrix had nothing to offer,
+    # and a directly-written RolePermissionField was resolved and then
+    # discarded because the read routes never masked. Declaring the money
+    # fields makes them governable; seed.py decides the shipped defaults.
     "employee.salary_structure": ScreenDef(
         key="employee.salary_structure", module="employee", label="Salary Structure", has_scope=True,
         actions=("edit", "edit_applicability"),
+        sensitive_fields=(
+            "basic_salary_monthly",
+            "dearness_allowance_monthly",
+            "hra_monthly",
+            "lta_amount",
+            "special_allowance_monthly",
+            "other_earnings_monthly",
+            "variable_pay_amount",
+            "gross_monthly",
+            "variable_pay_annualised",
+            "net_monthly",
+            "annual_ctc",
+        ),
     ),
     # §2.2 Insurance & Benefits tab: HR + Super Admin edit.
     "employee.insurance": ScreenDef(key="employee.insurance", module="employee", label="Insurance & Benefits", has_scope=True, actions=("edit",)),

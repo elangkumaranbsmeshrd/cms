@@ -386,6 +386,28 @@ SCREEN_ACTION_PERMISSIONS = {
 # field; only entries that need to deviate from that (MANAGER 'hide' here)
 # need a row at all. See app/rbac/resolver.py's Layer-3 docstring.
 SCREEN_FIELD_PERMISSIONS = {
+    # Budget is withheld from Employee by DEFAULT, which the shipped
+    # configuration did not do. registry/screens.py already declared
+    # sensitive_fields=("budget",), but nothing populated a mode for it, so the
+    # only protection was the "Hide Budget from Employee's Project View"
+    # toggle — and that toggle ships OFF, so out of the box an Employee
+    # received the full figure for every project they are on.
+    #
+    # The polarity was the tell: every other financial toggle here reads "SHOW
+    # X to <role>" and defaults False, i.e. hidden until revealed (Purchase
+    # Value to Manager, the vendor banking columns below). Budget alone read
+    # "HIDE X" defaulting False, i.e. visible until someone hides it —
+    # the opposite default from every sibling.
+    #
+    # Declaring it here rather than flipping the toggle's default is the
+    # Layer-3-native fix: it flows through resolver.py into field_modes and is
+    # overridable per role in the Permission Matrix, so a company that WANTS
+    # its team to see budgets can grant it, deliberately, in the same place
+    # every other field restriction lives. The toggle stays as a second, blunt
+    # control for installs that never touch the matrix.
+    "project.directory": {
+        "budget": {"EMPLOYEE": "hide"},
+    },
     # §6.1 "Allow Manager to Edit Vendor Bank & GST Details" OFF by default:
     # Manager holds 'edit' but not 'edit_banking', and per §2.1/§2.3 "All
     # three banking columns are withheld from Manager, on the same rule as

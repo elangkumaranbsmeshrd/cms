@@ -321,6 +321,9 @@ _PROBES = {
         f"/api/v1/assets/{w.assets[w.report_employee.id]}",
     ],
     "employee.my_assets": lambda w, role: ["/api/v1/employees/me/assets"],
+    # Added when budget became a DECLARED restriction (EMPLOYEE: hide)
+    # rather than something only a feature toggle could withhold.
+    "project.directory": lambda w, role: ["/api/v1/projects"],
 }
 # asset.reports publishes the same two governed fields under DERIVED key names
 # (total_purchase_value / total_current_value on the per-category rollup), so
@@ -456,17 +459,7 @@ async def test_manager_asset_report_carries_no_value_totals(db_session, client, 
 
 
 # ---------------- 2.3 the doc's canonical case: EMPLOYEE + Project Directory
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING (real leak, default configuration): an EMPLOYEE calling GET /api/v1/projects "
-        "receives the full `budget` figure for every project they are on. project.directory's "
-        "only budget protection is the feature toggle 'Hide Budget from Employee's Project View', "
-        "which app/rbac/toggles.py ships OFF, and app/seed.py's SCREEN_FIELD_PERMISSIONS declares "
-        "no field restriction for the screen at all. COMPLETE-TEST-PROMPT.md's bypass matrix item 2 "
-        "names this exact case and requires `budget` to be absent from the JSON body."
-    ),
-)
+# REGRESSION TEST for a real leak this suite found, now FIXED.
 async def test_employee_project_directory_body_carries_no_budget(db_session, client, world):
     """Bypass matrix item 2, verbatim: log in as EMPLOYEE, request the Project
     Directory, assert `budget` is absent from the JSON body."""
@@ -480,20 +473,7 @@ async def test_employee_project_directory_body_carries_no_budget(db_session, cli
     assert "budget" not in detail, f"Employee received Project Budget by id: {detail.get('budget')}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING (real leak, Layer 3 not wired): app/rbac/registry/screens.py declares "
-        "project.directory sensitive_fields=('budget',), so a ScreenSensitiveField row exists, so "
-        "rbac_admin.py ACCEPTS a Permission-Matrix write setting budget='hide' and resolver.py "
-        "resolves field_modes={'budget': 'hide'} — but app/api/v1/projects.py never calls "
-        "apply_field_masking. It hand-rolls `out.budget = None` gated on a feature toggle and a "
-        "literal role_code == 'EMPLOYEE' check, so the resolved field mode is ignored entirely and "
-        "the full figure is still served, on both the list and the by-id route. This is precisely "
-        "the failure mode resolver.py's own docstring warns about: 'a Super Admin could hide a "
-        "field in the admin matrix, the write would succeed, and it would never be enforced.'"
-    ),
-)
+# REGRESSION TEST for a real leak this suite found, now FIXED.
 async def test_project_directory_honours_a_declared_budget_hide(db_session, client, world):
     """The administrable half of the same gap: with Budget explicitly set to
     'hide' for Employee in the RBAC matrix, the field must leave the body."""
@@ -515,12 +495,12 @@ async def test_project_directory_honours_a_declared_budget_hide(db_session, clie
     assert "budget" not in detail, f"budget='hide' ignored by the by-id route: {detail.get('budget')}"
 
 
-async def test_project_budget_toggle_nulls_the_field_rather_than_removing_it(db_session, client, world):
+async def test_project_budget_toggle_removes_the_field_from_the_body(db_session, client, world):
     """Pins what the protection that DOES exist actually promises, so the two
     xfails above are not mistaken for "budget is never protected".
 
     With 'Hide Budget from Employee's Project View' ON, projects.py sets
-    `out.budget = None` — the VALUE is gone but the KEY remains, which diverges
+    `out.budget = None`. It now masks properly, so the KEY is gone too, matching
     from masking.py's own 'hide' contract (`out.pop(field_key)`, key absent).
     Asserted as-is rather than aspirationally: this is the code's real contract.
     """
@@ -537,10 +517,15 @@ async def test_project_budget_toggle_nulls_the_field_rather_than_removing_it(db_
     rows = (await client.get("/api/v1/projects")).json()
     assert rows
     for row in rows:
-        assert row["budget"] is None, f"toggle is ON but a figure came through: {row['budget']}"
+        # The toggle now runs through apply_field_masking like every other
+        # Layer 3 restriction, and masking.py's 'hide' POPS the key. It used
+        # to set the value to None, which still told the reader the field
+        # existed — a divergence from the documented hide contract that this
+        # assertion originally pinned as the observed behaviour.
+        assert "budget" not in row, f"toggle is ON but a figure came through: {row.get('budget')}"
 
     detail = (await client.get(f"/api/v1/projects/{world.team_project_id}")).json()
-    assert detail["budget"] is None
+    assert "budget" not in detail
 
     # Not a blanket null: a role the toggle does not name still gets the figure.
     _as(world.actor("SUPER_ADMIN"))
@@ -567,22 +552,7 @@ async def test_salary_structure_is_reachable_only_by_the_roles_that_hold_the_scr
         assert (await client.get(url + "/current")).status_code == 404
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "FINDING (Layer 3 absent on the salary screen): employee.salary_structure declares NO "
-        "fields anywhere — not in app/rbac/field_manifest.json (which covers 25 screens, not this "
-        "one), not in registry/screens.py's sensitive_fields, not in seed.py's "
-        "SCREEN_FIELD_PERMISSIONS — and app/api/v1/employee_compensation.py's read routes never "
-        "call apply_field_masking, serving every figure through response_model=SalaryStructureOut. "
-        "So HR and Accountant receive basic_salary_monthly / gross_monthly / annual_ctc for every "
-        "employee in the company, and even a directly-written RolePermissionField 'hide' (what this "
-        "test installs) is resolved by resolver.py and then silently discarded. The "
-        "response_model=SalaryStructureOut declaration would additionally re-materialise any popped "
-        "key as null or 500 — the exact sharp edge assets.py and vendors.py both carry a comment "
-        "about, and the reason both of those use response_model=None."
-    ),
-)
+# REGRESSION TEST for a real leak this suite found, now FIXED.
 async def test_salary_structure_honours_a_declared_field_hide(db_session, client, world):
     """Bypass matrix item 2, HR/Accountant + Salary Structure: a declared
     field restriction on a pay figure must leave the response body."""

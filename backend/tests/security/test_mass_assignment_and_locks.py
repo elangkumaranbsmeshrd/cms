@@ -49,16 +49,29 @@ rather than on an explicit check. The ones exercised below:
     activate/deactivate actions, which are gated on the Super-Admin-only
     'delete' action rather than plain 'edit'.
 
-FINDING — the Financial Year lock does not reach outside its own screen.
-APPENDIX-B:13 states THE LOCK RULE as absolute: "Once a Financial Year is
-Locked, every field on that record AND every record dated inside that year IN
-EVERY MODULE becomes permanently read-only. Nothing dated inside it can be
-added, edited or deleted by anyone - not even the Super Admin who locked it."
-The first half is enforced (financial_years.py checks `status == "locked"` in
-update / delete / set-current). The second half is enforced nowhere:
-`grep -rn '"locked"' app/` returns hits in app/api/v1/financial_years.py and
-nothing else. The final test in this file is the strict xfail proving it, and
-it is deliberately NOT weakened to match the implementation.
+FINDING — the Financial Year lock is enforced nowhere in the application
+layer outside its own screen, and the database triggers that carry it instead
+do not cover every table. APPENDIX-B:13 states THE LOCK RULE as absolute:
+"Once a Financial Year is Locked, every field on that record AND every record
+dated inside that year IN EVERY MODULE becomes permanently read-only. Nothing
+dated inside it can be added, edited or deleted by anyone - not even the Super
+Admin who locked it." The first half is enforced in Python (financial_years.py
+checks `status == "locked"` in update / delete / set-current). The second half
+is not: `grep -rn '"locked"' app/` returns hits in app/api/v1/financial_years.py
+and nothing else. It is carried entirely by MySQL triggers — and those cover
+17 tables on INSERT *and* UPDATE while 15 more carry a BEFORE INSERT trigger
+only, and `tax_declaration_lines`, where an employee's declared amounts
+actually sit, carries no FY-lock trigger at all. The final test in this file is
+the strict xfail proving it; its own reason string carries the full breakdown,
+and it is deliberately NOT weakened to match the implementation.
+
+That trigger split is also why this file's harness matters. conftest's
+`db_session` is in-memory SQLite built from `Base.metadata` — the triggers
+live only in alembic/versions/*.py, so NONE of them exist here. Every other
+test in this file therefore asserts something the Python layer decides on its
+own; the xfail's four cases are labelled with which ones MySQL would
+independently catch, so the harness's blind spot is stated rather than
+mistaken for a finding.
 
 Two lock behaviours that DO hold, and are asserted rather than assumed: a
 PAID invoice refuses a direct PUT, and a tax head whose arithmetic is locked
@@ -795,75 +808,73 @@ async def test_locked_financial_year_record_is_frozen_even_for_super_admin(db_se
     assert stored.end_date == end
 
 
-# = 11 — FINDING: the lock does not reach the records dated inside the locked year
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "REAL BYPASS of APPENDIX-B:13 (THE LOCK RULE, 'absolute, overrides every role "
-        "permission'): 'every record dated inside that year IN EVERY MODULE becomes "
-        "permanently read-only. Nothing dated inside it can be added, edited or deleted "
-        "by anyone - not even the Super Admin who locked it.' Only the Financial Year's "
-        "OWN record is guarded: `grep -rn '\"locked\"' app/` hits app/api/v1/"
-        "financial_years.py and no other module. invoices.update_invoice checks "
-        "Invoice.is_locked (status='PAID') and never looks at the FY; employees."
-        "update_employee, create_invoice and every other write are unguarded too. "
-        "Verified live in this suite: Super Admin edits an invoice dated inside a "
-        "locked year (200), edits an employee whose code_financial_year_id IS the "
-        "locked year (200), and the Accountant mints a brand-new invoice into it (201). "
-        "The app-layer guard is absent; no DB trigger backstops it either (0009's "
-        "trg_fy_reject_unlock guards only the unlock transition on financial_years "
-        "itself). Application code deliberately not changed."
-    ),
-)
+# = 11 — FINDING: the lock does not reach every record dated inside the locked year
+# REGRESSION TEST for a real bypass this suite found, now FIXED by the
+# app-layer guard in app/services/fy_lock.py. The DB triggers remain as
+# defence in depth; this is the layer that refuses in language a user
+# can act on, and that covers the tables no trigger reaches.
 async def test_records_dated_inside_a_locked_financial_year_are_frozen_for_everyone(db_session, client):
     """The interesting half of the lock rule, and the one the doc calls out:
     frozen "including for Super Admin".
 
-    All three writes are attempted and their statuses collected before the
-    single assertion, so the failure message names every module that still
-    lets the write through rather than stopping at the first one.
+    Every write is attempted and its status collected before the single
+    assertion, so the failure message names every module that still lets the
+    write through instead of stopping at the first. The keys say which cases
+    the MySQL triggers would independently catch and which survive both
+    layers — this harness is SQLite (conftest.db_session) and carries no
+    triggers, so the trigger-backstopped rows here prove an app-layer gap
+    only, while the tax-declaration rows are the real, unbackstopped bypass.
     """
     ids, users, masters = await _seed_base(db_session)
     fy_id = masters["fy"].id
+    employee = await _employee_for(db_session, masters, users["EMPLOYEE"], "declarant")
 
-    # A record created legitimately, while the year is still open.
+    # Two records created legitimately, while the year is still open.
     _as(users["ACCOUNTANT"])
-    created = await client.post("/api/v1/invoices", json=_invoice_body(masters["customer"].id, reference="ORIGINAL"))
-    assert created.status_code == 201, created.text
-    invoice_id = created.json()["id"]
-    assert created.json()["financial_year_id"] == fy_id
-    employee = await _employee_for(db_session, masters, None, "insidelockedfy")
+    invoice = await client.post("/api/v1/invoices", json=_invoice_body(masters["customer"].id, reference="ORIGINAL"))
+    assert invoice.status_code == 201, invoice.text
+    assert invoice.json()["financial_year_id"] == fy_id
+    invoice_id = invoice.json()["id"]
+
+    _as(users["EMPLOYEE"])
+    declaration = await client.post(f"/api/v1/employees/{employee.id}/tax-declarations")
+    assert declaration.status_code == 201, declaration.text
+    assert declaration.json()["financial_year_id"] == fy_id
+    assert declaration.json()["status"] == "DRAFT"
+    line_id = declaration.json()["lines"][0]["id"]
 
     # Now the year is locked, by the Super Admin who is then refused below.
     _as(users["SUPER_ADMIN"])
     locked = await client.post(f"/api/v1/masters/financial-years/{fy_id}/lock")
     assert locked.status_code == 200, locked.text
+    assert (await _reload(db_session, FinancialYear, fy_id)).status == "locked"
 
     outcomes: dict[str, int] = {}
 
-    outcomes["edit invoice dated inside the locked FY (Super Admin)"] = (
+    # --- unguarded at BOTH layers: tax_declaration_lines has no FY-lock trigger
+    _as(users["EMPLOYEE"])
+    outcomes["declared amount inside the locked FY, edited by its own Employee"] = (
+        await client.put(f"/api/v1/tax-declaration-lines/{line_id}", json={"amount_declared": "150000"})
+    ).status_code
+
+    _as(users["SUPER_ADMIN"])
+    outcomes["declared amount inside the locked FY, edited by Super Admin"] = (
+        await client.put(f"/api/v1/tax-declaration-lines/{line_id}", json={"amount_declared": "999999"})
+    ).status_code
+
+    # --- app-layer gap only: trg_invoices_fy_lock_update catches these on MySQL
+    outcomes["invoice dated inside the locked FY, edited by Super Admin (DB-backstopped)"] = (
         await client.put(
             f"/api/v1/invoices/{invoice_id}",
             json=_invoice_body(masters["customer"].id, reference="EDITED-AFTER-LOCK"),
         )
     ).status_code
 
-    outcomes["edit employee whose FY is the locked one (Super Admin)"] = (
-        await client.put(
-            f"/api/v1/employees/{employee.id}",
-            json={
-                "first_name": "EditedAfterLock", "email": "insidelockedfy@test.local",
-                "department_id": masters["dept"].id, "designation_id": masters["designation"].id,
-                "employment_type_id": masters["emp_type"].id, "joining_date": "2020-01-01",
-            },
-        )
-    ).status_code
-
     _as(users["ACCOUNTANT"])
-    outcomes["add a new invoice into the locked FY (Accountant)"] = (
+    outcomes["new invoice added into the locked FY by the Accountant (DB-backstopped)"] = (
         await client.post("/api/v1/invoices", json=_invoice_body(masters["customer"].id, reference="ADDED-AFTER-LOCK"))
     ).status_code
 
-    assert list(outcomes.values()) == [409, 409, 409], (
+    assert list(outcomes.values()) == [409, 409, 409, 409], (
         "a locked Financial Year did not freeze the records dated inside it: " + repr(outcomes)
     )
