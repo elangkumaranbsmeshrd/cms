@@ -1,0 +1,79 @@
+# Frontend CI. Did not exist before: nothing built, tested or inspected the
+# Angular app on push, which is how a production build that baked in
+# http://127.0.0.1:8001 reached main without anything noticing.
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` not `npm install`: installs exactly the lockfile and fails if
+      # it disagrees with package.json, so CI can never silently test a
+      # different dependency tree than a release build produces.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npx ng build --configuration production
+
+      # ------------------------------------------------------------------
+      # Regression guard for a real defect, not a hypothetical one.
+      #
+      # There was no environment.prod.ts and angular.json had no
+      # fileReplacements, so every production build embedded a localhost API
+      # URL. A deployed page called the END USER's own machine and the app was
+      # completely non-functional off the dev box. It built cleanly and passed
+      # every check that existed, because nothing inspected the output.
+      #
+      # This asserts on the artefact itself rather than on the config, so it
+      # keeps holding however the config is later refactored.
+      # ------------------------------------------------------------------
+      - name: Assert no dev API URL in the production bundle
+        run: |
+          if grep -rlE '127\.0\.0\.1:[0-9]+|localhost:[0-9]+' dist/frontend/browser; then
+            echo "::error::Production bundle contains a localhost/dev API URL."
+            echo "Check src/environments/environment.prod.ts and angular.json's"
+            echo "production fileReplacements. A build with a dev URL is not deployable."
+            exit 1
+          fi
+          echo "OK: no localhost/dev URL in the production bundle"
+
+      - name: Assert the API base is a same-origin relative path
+        run: |
+          if ! grep -rq '"/api/v1"\|/api/v1' dist/frontend/browser; then
+            echo "::error::Could not find the /api/v1 base path in the bundle."
+            echo "environment.prod.ts should set a relative apiBaseUrl so nginx can"
+            echo "proxy it same-origin (see frontend/default.conf.template)."
+            exit 1
+          fi
+          echo "OK: relative /api/v1 base present"
+
+      # Non-blocking on purpose. A transitive advisory in a build-time
+      # dependency should be visible in the log, but it must not be able to
+      # block a security fix from shipping.
+      - name: Dependency audit (advisory)
+        continue-on-error: true
+        run: npm audit --omit=dev
+
+      - name: Verify the frontend image builds
+        working-directory: .
+        run: docker build -t meshrd-cms-frontend:ci ./frontend

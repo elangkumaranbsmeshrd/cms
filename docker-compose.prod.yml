@@ -1,0 +1,103 @@
+# Production stack: nginx+SPA -> backend -> MySQL/Redis.
+#
+# Distinct from backend/docker-compose.yml, which is a DEV convenience file
+# (hardcoded passwords, DB ports published to the host, no app services at
+# all). Nothing here carries a default credential: every secret comes from the
+# .env file beside this one, and compose fails loudly if one is missing rather
+# than starting something insecure.
+#
+#   cp .env.prod.example .env    # then fill in real values
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-meshrd_cms}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+    # Deliberately NO `ports:`. In dev the DB is published to the host for a
+    # GUI client; in production nothing outside this network should be able to
+    # reach 3306 at all. Use `docker compose exec mysql mysql ...` instead.
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Redis backs the login rate limiter. It holds no durable state, so no
+    # volume — but it must be reachable, since rate_limit.py fails OPEN when
+    # Redis is unavailable (brute-force protection silently stops applying).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-meshrd-cms-backend:local}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-meshrd_cms}
+      DATABASE_URL_SYNC: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE:-meshrd_cms}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?set CREDENTIAL_ENCRYPTION_KEY in .env}
+      ENVIRONMENT: production
+      FILE_STORAGE_ROOT: /app/storage
+      # The SPA is served same-origin by the frontend container, so browsers
+      # never make a cross-origin call. This stays narrow on purpose.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    volumes:
+      # Uploaded files live outside the container: an image redeploy must not
+      # take employee documents and receipts with it.
+      - backend_storage:/app/storage
+    # gunicorn, not bare uvicorn (ARCH-3 §9). --preload is deliberately ABSENT:
+    # with preload_app on, a reload/rolling restart silently keeps serving the
+    # old code, which this repo has flagged repeatedly.
+    command: >
+      gunicorn app.main:app
+      --worker-class uvicorn.workers.UvicornWorker
+      --workers ${GUNICORN_WORKERS:-4}
+      --bind 0.0.0.0:8000
+      --timeout 120
+      --graceful-timeout 30
+      --access-logfile -
+      --error-logfile -
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: ${FRONTEND_IMAGE:-meshrd-cms-frontend:local}
+    restart: unless-stopped
+    # No `condition: service_healthy` on the backend: nginx resolves the API
+    # at request time, so the SPA must still serve (and show its own error
+    # state) while the backend is restarting. Blocking startup here would turn
+    # a backend blip into a fully dead site.
+    depends_on:
+      - backend
+    environment:
+      BACKEND_ORIGIN: http://backend:8000
+    ports:
+      - "${HTTP_PORT:-80}:80"
+
+volumes:
+  mysql_data:
+  backend_storage:

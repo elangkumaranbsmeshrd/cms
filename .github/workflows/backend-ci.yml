@@ -65,3 +65,15 @@ jobs:
 
       - name: pytest
         run: python -m pytest -q
+
+      # Advisory, not blocking: a transitive advisory should be visible in the
+      # log without being able to stop a security fix from shipping.
+      - name: Dependency audit (advisory)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --ignore-vuln GHSA-wj6h-64fc-37mp || true
+
+      - name: Verify the backend image builds
+        working-directory: .
+        run: docker build -t meshrd-cms-backend:ci ./backend

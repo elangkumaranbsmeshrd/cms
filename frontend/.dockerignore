@@ -1,0 +1,12 @@
+# Keep the build context small and prevent host artefacts leaking into the
+# image. node_modules especially: it must be installed inside the builder from
+# the lockfile, never copied from a developer's machine where it may hold
+# platform-specific binaries.
+node_modules
+dist
+.angular
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.log

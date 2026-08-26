@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Production process manager. ARCH-3 §9 runs uvicorn workers under
+    # gunicorn rather than bare uvicorn, so it has to be a real dependency of
+    # the image, not something assumed present on the host.
+    "gunicorn>=23.0",
     "sqlalchemy[asyncio]>=2.0.35",
     # CVE-2025-65896 (GHSA-qhqw-rrw9-25rm) — asyncmy's escape_dict() only
     # escapes dict VALUES, never dict KEYS, so a query executed with a
