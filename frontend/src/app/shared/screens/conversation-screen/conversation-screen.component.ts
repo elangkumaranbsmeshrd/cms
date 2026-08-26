@@ -124,9 +124,19 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
             }
             <div class="composer-body">
               <div class="field" style="margin-bottom: 0;">
+                <!-- This <label> has no for/id pair and the <textarea> is only
+                     its sibling, so the accessible name fell through to the
+                     placeholder — which disappears the moment the user starts
+                     typing, and is what axe's label-title-only/label rules exist
+                     to catch. aria-label names it unconditionally, exactly as
+                     form-screen.component.ts does for its own controls (see the
+                     comment there); it also drops the "*", which belongs to
+                     aria-required, not to the field's name. -->
                 <label>Content <span class="req">*</span></label>
                 <textarea
                   class="input"
+                  aria-label="Content"
+                  aria-required="true"
                   [placeholder]="config().composerPlaceholder ?? 'Write your reply…'"
                   style="min-height: 74px;"
                   [(ngModel)]="content"

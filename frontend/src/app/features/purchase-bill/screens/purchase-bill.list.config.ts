@@ -105,8 +105,12 @@ const config: ListScreenConfig<PurchaseBillRow> = {
     { key: 'outstanding', label: 'Outstanding Amount', kind: 'numberrange', transport: 'server', param: 'outstanding' },
     { key: 'payment_mode_id', label: 'Payment Mode', kind: 'select', transport: 'server', allLabel: 'All Modes', optionsRef: PAYMENT_MODE_REF },
     { key: 'bank_account_id', label: 'Bank Account', kind: 'select', transport: 'server', allLabel: 'All Accounts', optionsRef: BANK_ACCOUNT_REF },
-    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
-    { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
+    // Each names its own field: the filter chrome renders only allLabel inside
+    // the <select> (f.label reaches a title tooltip and nothing more), so the
+    // 'Anyone' this pair used to share made the two adjacent dropdowns read
+    // identically on screen and to a screen reader alike.
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
+    { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
   ],
   defaultPageSize: 25,
   emptyText: 'No purchase bills yet.',

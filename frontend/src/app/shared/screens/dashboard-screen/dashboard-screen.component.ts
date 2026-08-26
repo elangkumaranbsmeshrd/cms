@@ -189,7 +189,16 @@ const BADGE_TONE_CLASS: Record<DashboardTone, string> = {
                   <p>{{ w.emptyText ?? 'Nothing here yet.' }}</p>
                 </div>
               } @else {
-                <div class="table-wrap">
+                <!-- .table-wrap scrolls horizontally (components.css:242) and
+                     nothing inside a widget table is focusable — the rows carry
+                     a (click) but never a tab stop — so a keyboard-only user
+                     has no way to reach the columns that overflow the card.
+                     tabindex="0" makes the wrap itself focusable and
+                     arrow-scrollable (axe scrollable-region-focusable, WCAG
+                     2.1.1/2.1.3); role="region" named by the widget's own title
+                     stops that new tab stop being announced as an anonymous
+                     group. -->
+                <div class="table-wrap" tabindex="0" role="region" [attr.aria-label]="w.title">
                   <table>
                     <thead>
                       <tr>

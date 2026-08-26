@@ -87,11 +87,18 @@ const config: ListScreenConfig<EmployeeRow> = {
     // range — both already accepted server-side (list_employees's own
     // reporting_manager_id/joining_date_from/joining_date_to params) but
     // never wired to a frontend control. 2026-08-11 production-readiness fix.
-    { key: 'reporting_manager_id', label: 'Reporting Manager', kind: 'select', transport: 'server', allLabel: 'Anyone', optionsRef: EMPLOYEE_REF },
+    //
+    // Reporting Manager, Created By and Last Modified By are all people
+    // pickers, so each one's all-options text has to name WHICH person it
+    // means. list-screen.component.ts renders nothing but allLabel inside the
+    // <select> — f.label reaches only a title tooltip — so the bare 'Anyone'
+    // all three used to share left them indistinguishable on screen, and
+    // identical to a screen reader reading out the collapsed option.
+    { key: 'reporting_manager_id', label: 'Reporting Manager', kind: 'select', transport: 'server', allLabel: 'All Reporting Managers', optionsRef: EMPLOYEE_REF },
     { key: 'joining_date', label: 'Joining Date', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'joining_date' },
     // §2.2e Super Admin extras.
-    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
-    { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
+    { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
   ],
   columns: [
     { key: 'employee_code', header: 'Employee ID', type: 'code', cellClass: 'mono cell-accent' },

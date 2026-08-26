@@ -98,9 +98,9 @@ const config: ListScreenConfig<ExpenseApprovalRow> = {
     // toggles.py's ACTION_TOGGLE_GATES).
     { key: 'vendor_id', label: 'Vendor', kind: 'select', transport: 'server', allLabel: 'All Vendors', optionsRef: { endpoint: '/vendors/options', labelKey: 'label' } },
     { key: 'department_id', label: 'Department', kind: 'select', transport: 'server', allLabel: 'All Departments', optionsRef: { endpoint: '/masters/departments/options', labelKey: 'label' } },
-    { key: 'amount', label: 'Amount', kind: 'numberrange', transport: 'server', allLabel: 'Any', param: 'amount' },
+    { key: 'amount', label: 'Amount', kind: 'numberrange', transport: 'server', allLabel: 'Any Amount', param: 'amount' },
     { key: 'submitted', label: 'Submitted', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'submitted' },
-    { key: 'pending_days', label: 'Pending At Least (Days)', kind: 'number', transport: 'server', allLabel: 'Any' },
+    { key: 'pending_days', label: 'Pending At Least (Days)', kind: 'number', transport: 'server', allLabel: 'Any Wait' },
     // Client transport: no ?claim_type= param exists on this endpoint (see
     // above) — and since every row here is already REIMBURSABLE by the
     // server's own hardcoded filter, picking Company-Paid always yields zero

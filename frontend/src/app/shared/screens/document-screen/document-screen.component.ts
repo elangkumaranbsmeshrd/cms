@@ -249,7 +249,21 @@ import { ArrayColumnConfig, DocumentActionDef, DocumentScreenConfig, DocumentTot
               <h4>Line Items</h4>
               <span class="note">{{ lineItemRows().length }} item{{ lineItemRows().length === 1 ? '' : 's' }}</span>
             </div>
-            <div class="table-wrap">
+            <!-- Focusable ONLY while locked. An editable line-item grid is
+                 full of inputs, selects and remove buttons, so a keyboard user
+                 already tabs into .table-wrap and drags its horizontal scroll
+                 (components.css:242) along with them; a locked document renders
+                 those same cells as plain text and the wrap is left with no tab
+                 stop at all — the unreachable scroller axe's
+                 scrollable-region-focusable (WCAG 2.1.1/2.1.3) flags. Binding
+                 the attribute rather than hard-coding it keeps a dead tab stop
+                 from being planted in front of the editable grid. -->
+            <div
+              class="table-wrap"
+              [attr.tabindex]="isLocked() ? 0 : null"
+              [attr.role]="isLocked() ? 'region' : null"
+              [attr.aria-label]="isLocked() ? 'Line items' : null"
+            >
               <table class="lineitems">
                 <thead>
                   <tr>

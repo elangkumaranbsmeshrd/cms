@@ -74,11 +74,35 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
       <div class="form-error" style="margin: 0 0 12px;">{{ actionError() }}</div>
     }
 
+    <!-- Every control in this filter bar carries an explicit [attr.aria-label]
+         alongside whatever [title]/[placeholder] it already had. The filter bar
+         is deliberately label-less by design — the dimension name lives in the
+         "All Departments" option or the placeholder, not in a <label> above the
+         control — so before this the ONLY thing naming these controls was the
+         tooltip, which an axe-core sweep of all 69 screens flagged 269 times as
+         [serious] label-title-only (and 17 more as [critical] select-name where
+         even the tooltip was missing). title is not a label: it never surfaces
+         on touch, it disappears the moment the control takes keyboard focus,
+         and screen readers only announce it as a last resort — so a keyboard or
+         screen-reader user met a bare "combo box" with no idea what it filtered.
+         aria-label wins the accessible-name computation outright (same reasoning
+         as form-screen.component.ts's own [attr.aria-label], see its comment), so
+         it names the control without adding any visual chrome to a bar that is
+         intentionally compact. The title attributes stay: they are a genuinely
+         useful hover tooltip AND the handle several E2E specs already grab these
+         controls by (select[title="Department"] in no-hardcoded-values.spec.ts,
+         applySelectFilter/applyMultiselectFilter in filters-and-export.spec.ts). -->
     <div class="filterbar">
       <div class="filter-row">
         <div class="searchbox">
           <span class="s-icon"><app-icon name="search" [size]="14" [width]="2" /></span>
-          <input type="search" [placeholder]="searchPlaceholder()" [value]="store.query()" (input)="store.setQuery($any($event.target).value)" />
+          <input
+            type="search"
+            [placeholder]="searchPlaceholder()"
+            [attr.aria-label]="searchPlaceholder()"
+            [value]="store.query()"
+            (input)="store.setQuery($any($event.target).value)"
+          />
         </div>
 
         @for (f of visibleFilters(); track f.key) {
@@ -103,15 +127,21 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
               </span>
             }
             @case ('daterange') {
-              <select class="fselect" [title]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
                 <option value="">{{ f.allLabel ?? f.label }}</option>
                 @for (p of presets(); track p.value) {
                   <option [value]="p.value">{{ p.label }}</option>
                 }
               </select>
               @if (datePreset(f) === CUSTOM) {
-                <input class="fsearch" type="date" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
-                <input class="fsearch" type="date" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
+                <!-- These two had no title, placeholder or label of any kind —
+                     a worse case than the tooltip-only controls around them,
+                     since a date input renders no visible text at all when
+                     empty. They escaped the axe sweep only because they render
+                     exclusively after the preset dropdown is switched to
+                     "Custom", which an automated crawl never does. -->
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' from'" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' to'" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
               }
             }
             @case ('numberrange') {
@@ -119,17 +149,20 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
                    bounds bound to one {min,max}-shaped filter value, instead
                    of a preset dropdown (no preset concept exists for a bare
                    number the way 'this_fy' does for a date). -->
-              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Min'" [value]="numberMin(f)" (change)="setNumberRange(f, 'min', $any($event.target).value)" style="max-width: 110px;" />
-              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Max'" [value]="numberMax(f)" (change)="setNumberRange(f, 'max', $any($event.target).value)" style="max-width: 110px;" />
+              <!-- A placeholder is no better a label than a title: it is wiped
+                   from the box the instant the user types, so the name of the
+                   field vanishes exactly when they most need to check it. -->
+              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Min'" [attr.aria-label]="f.label + ' Min'" [value]="numberMin(f)" (change)="setNumberRange(f, 'min', $any($event.target).value)" style="max-width: 110px;" />
+              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Max'" [attr.aria-label]="f.label + ' Max'" [value]="numberMax(f)" (change)="setNumberRange(f, 'max', $any($event.target).value)" style="max-width: 110px;" />
             }
             @case ('text') {
               <!-- Committed on blur/Enter (change), not per-keystroke — same
                    convention 'numberrange' below already uses, so a filter
                    fetch doesn't fire on every character typed. -->
-              <input class="fsearch" type="search" [placeholder]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)" />
+              <input class="fsearch" type="search" [placeholder]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)" />
             }
             @case ('number') {
-              <input class="fsearch" type="number" inputmode="numeric" [placeholder]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)" style="max-width: 110px;" />
+              <input class="fsearch" type="number" inputmode="numeric" [placeholder]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)" style="max-width: 110px;" />
             }
             @case ('activeInactive') {
               <!-- Distinct from the shared "Show inactive" checkbox: that one
@@ -138,7 +171,7 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
                    both and must be narrowed here. Only one of the two ever
                    appears on a screen (includeInactiveParam is false wherever
                    this kind is used). -->
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? 'All Statuses' }}</option>
                 @for (opt of optionsFor(f); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -146,14 +179,14 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
               </select>
             }
             @case ('tristate') {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? f.label + ' — Any' }}</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
               </select>
             }
             @default {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="store.setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? 'All ' + f.label }}</option>
                 @for (opt of optionsFor(f); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -225,7 +258,25 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
           }
         </div>
       } @else {
-        <div class="table-wrap">
+        <!-- A horizontally-scrolling container with no focusable descendant is
+             unreachable by keyboard: there is nothing to Tab to, so the columns
+             past the right edge cannot be brought into view at all. tabindex="0"
+             makes the region itself focusable and therefore arrow-key
+             scrollable (axe: scrollable-region-focusable).
+
+             Bound rather than hard-coded, because this wrap DOES gain focusable
+             children when the config declares rowActions — each row then renders
+             a button. Stamping tabindex on unconditionally would add a dead tab
+             stop in front of every list that already has one. The nine screens
+             axe flagged are precisely the configs without rowActions.
+
+             title is required on ListScreenConfig, so the label is never empty. -->
+        <div
+          class="table-wrap"
+          [attr.tabindex]="config().rowActions ? null : 0"
+          [attr.role]="config().rowActions ? null : 'region'"
+          [attr.aria-label]="config().rowActions ? null : config().title"
+        >
           <table>
             <thead>
               <tr>
@@ -281,12 +332,22 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
         </div>
         <div class="pager">
           <span>{{ store.total() }} {{ store.total() === 1 ? recordNoun() : recordNounPlural() }}</span>
+          <!-- The two arrows are named explicitly because their entire visible
+               content is a single guillemet, which a screen reader announces as
+               its Unicode character name ("single left-pointing angle quotation
+               mark") or, on the settings most users actually run with, as
+               nothing at all — a real accessible name in the same sense the
+               filter controls above lacked one. The numbered buttons keep their
+               name-from-content ("3" is exactly what a page button should
+               announce) and only gain aria-current, which is what tells a
+               screen-reader user which page they are already on — the .on class
+               conveys that to sighted users alone. -->
           <div class="pages">
-            <button class="pg" [disabled]="store.page() <= 1" (click)="store.setPage(store.page() - 1)">‹</button>
+            <button class="pg" aria-label="Previous page" [disabled]="store.page() <= 1" (click)="store.setPage(store.page() - 1)">‹</button>
             @for (p of pageNumbers(); track p) {
-              <button class="pg" [class.on]="p === store.page()" (click)="store.setPage(p)">{{ p }}</button>
+              <button class="pg" [class.on]="p === store.page()" [attr.aria-current]="p === store.page() ? 'page' : null" (click)="store.setPage(p)">{{ p }}</button>
             }
-            <button class="pg" [disabled]="store.page() >= store.pageCount()" (click)="store.setPage(store.page() + 1)">›</button>
+            <button class="pg" aria-label="Next page" [disabled]="store.page() >= store.pageCount()" (click)="store.setPage(store.page() + 1)">›</button>
           </div>
         </div>
       }

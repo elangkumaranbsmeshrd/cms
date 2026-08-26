@@ -58,8 +58,11 @@ const config: ListScreenConfig<CustomerRow> = {
     { key: 'has_open_opportunities', label: 'Has Open Opportunities', kind: 'tristate', transport: 'server', allLabel: 'Any' },
     { key: 'created_at', label: 'Created On', kind: 'daterange', transport: 'server', param: 'created' },
     { key: 'last_activity_date', label: 'Last Activity', kind: 'daterange', transport: 'server', param: 'last_activity' },
-    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
-    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
+    // Two people pickers side by side, so each spells out which one it is:
+    // the filter chrome shows only allLabel inside the <select> (f.label is a
+    // title tooltip), and a shared 'Anyone' made the pair indistinguishable.
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
+    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
   ],
   columns: [
     { key: 'customer_code', header: 'Customer Code', type: 'code' },

@@ -77,8 +77,17 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
 
     <div class="filterbar">
       <div class="filter-row">
+        <!-- The <span> to the left is a visual caption, not a <label for> — it
+             names nothing as far as the accessibility tree is concerned, which
+             is why the axe sweep flagged this select as [critical] select-name
+             on /rbac/matrix: the single most important control on the screen
+             (which role is being edited) announced as an unnamed combo box.
+             aria-label off the same config().columns.label the caption renders
+             keeps the two from ever disagreeing; see form-screen.component.ts's
+             own [attr.aria-label] comment for why aria-label rather than
+             wiring up a for/id pair. -->
         <span style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">{{ config().columns.label }}</span>
-        <select class="fselect" style="max-width: 220px;" [value]="selectedColumn()" (change)="selectColumn($any($event.target).value)">
+        <select class="fselect" style="max-width: 220px;" [attr.aria-label]="config().columns.label" [value]="selectedColumn()" (change)="selectColumn($any($event.target).value)">
           @for (opt of columnOptions(); track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
           }
@@ -89,13 +98,17 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
           <input
             type="search"
             placeholder="Search modules, screens, actions and fields…"
+            aria-label="Search modules, screens, actions and fields"
             [value]="search()"
             (input)="search.set($any($event.target).value)"
           />
         </div>
 
         @if (moduleOptions().length > 1) {
-          <select class="fselect" [title]="config().moduleFilterLabel ?? 'All Modules'" [value]="moduleFilter()" (change)="moduleFilter.set($any($event.target).value)">
+          <!-- title alone was this select's only name — [serious]
+               label-title-only in the axe sweep; see list-screen.component.ts's
+               filter-bar comment for why a tooltip is not a label. -->
+          <select class="fselect" [title]="config().moduleFilterLabel ?? 'All Modules'" [attr.aria-label]="config().moduleFilterLabel ?? 'All Modules'" [value]="moduleFilter()" (change)="moduleFilter.set($any($event.target).value)">
             <option value="">{{ config().moduleFilterLabel ?? 'All Modules' }}</option>
             @for (m of moduleOptions(); track m.value) {
               <option [value]="m.value">{{ m.label }}</option>

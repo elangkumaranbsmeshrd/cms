@@ -89,11 +89,16 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
       <div><b>All filters apply across every view on this screen simultaneously</b>, so switching view never silently changes the underlying set — a figure that quietly reflects a different filter than the table beside it would be worse than no figure at all.</div>
     </div>
 
+    <!-- Same [attr.aria-label]-on-every-control rule as list-screen.component.ts's
+         filter bar — see the long comment there for why the [title] these
+         controls used to be labelled by is a tooltip and not a label, and why
+         the axe sweep counted that as [serious] label-title-only on every
+         report screen. The title attributes stay. -->
     <div class="filterbar">
       <div class="filter-row">
         <div class="searchbox">
           <span class="s-icon"><app-icon name="search" [size]="14" [width]="2" /></span>
-          <input type="search" placeholder="Search…" [value]="query()" (input)="setQuery($any($event.target).value)" />
+          <input type="search" placeholder="Search…" aria-label="Search" [value]="query()" (input)="setQuery($any($event.target).value)" />
         </div>
 
         @for (f of visibleFilters(); track f.key) {
@@ -116,19 +121,23 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
               </span>
             }
             @case ('daterange') {
-              <select class="fselect" [title]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
                 <option value="">{{ f.allLabel ?? f.label }}</option>
                 @for (p of presets(); track p.value) {
                   <option [value]="p.value">{{ p.label }}</option>
                 }
               </select>
               @if (datePreset(f) === CUSTOM) {
-                <input class="fsearch" type="date" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
-                <input class="fsearch" type="date" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
+                <!-- Nameless in every sense before this: no title, no
+                     placeholder, and an empty date input shows no text at all.
+                     Only unflagged by axe because they appear after the preset
+                     is switched to "Custom", which a crawler never does. -->
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' from'" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' to'" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
               }
             }
             @case ('activeInactive') {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? 'All Statuses' }}</option>
                 @for (opt of optionsFor(f); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -136,14 +145,14 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
               </select>
             }
             @case ('tristate') {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? f.label + ' — Any' }}</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
               </select>
             }
             @default {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? 'All ' + f.label }}</option>
                 @for (opt of optionsFor(f); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>
@@ -213,7 +222,13 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
                 <p>{{ table.emptyText ?? 'No records match the filters currently applied.' }}</p>
               </div>
             } @else {
-              <div class="table-wrap">
+              <!-- Same keyboard-reachability fix as list-screen's own
+                   table-wrap, but unconditional here: a report table is
+                   entirely read-only — ReportScreenConfig has no rowActions
+                   equivalent — so this container never gains a focusable child
+                   of its own. table.title is already the card heading and the
+                   loop's track key, so each region gets a distinct name. -->
+              <div class="table-wrap" tabindex="0" role="region" [attr.aria-label]="table.title">
                 <table>
                   <thead>
                     <tr>

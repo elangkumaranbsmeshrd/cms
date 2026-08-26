@@ -45,8 +45,14 @@ export const OPPORTUNITY_PIPELINE_FILTERS: readonly FilterDef<OpportunityRow>[] 
   // §2.1: "stale — no activity in N days" — a single cutoff, the exact
   // shape the 'number' FilterKind was added for (not a min/max pair).
   { key: 'stale_days', label: 'Stale (Days, No Activity)', kind: 'number', transport: 'server' },
-  { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'All', optionsRef: OPPORTUNITY_OWNER_REF, superAdminOnly: true },
-  { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'All', optionsRef: OPPORTUNITY_OWNER_REF, superAdminOnly: true },
+  // A bare 'All' on both told the reader nothing and told them the same thing
+  // twice: the filter chrome renders only allLabel inside the <select> —
+  // f.label reaches a title tooltip and nothing more — so these two adjacent
+  // people pickers were indistinguishable here, on the Stage Summary board
+  // and on the Customer record's Opportunities tab, all three of which reuse
+  // this array.
+  { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', optionsRef: OPPORTUNITY_OWNER_REF, superAdminOnly: true },
+  { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', optionsRef: OPPORTUNITY_OWNER_REF, superAdminOnly: true },
 ];
 
 // This is one of TWO routes over the same 'opportunity.pipeline' screen key

@@ -228,7 +228,14 @@ import { PayslipLineItem, PayslipReissueRow, PayslipScreenConfig } from '../scre
                 <p>No reissues recorded for this payslip.</p>
               </div>
             } @else {
-              <div class="table-wrap">
+              <!-- Every cell in the reissue log is plain read-only text, so
+                   this horizontally scrolling wrap (components.css:242) holds
+                   nothing a keyboard can land on and its right-hand columns —
+                   the old-vs-new figures, the whole point of the audit trail —
+                   are unreachable without a mouse. tabindex="0" plus a named
+                   role="region" makes it a focusable, arrow-scrollable stop
+                   (axe scrollable-region-focusable, WCAG 2.1.1/2.1.3). -->
+              <div class="table-wrap" tabindex="0" role="region" aria-label="Reissue history">
                 <table>
                   <thead>
                     <tr>

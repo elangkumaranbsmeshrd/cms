@@ -189,7 +189,11 @@ interface AssetReportsSummary {
             </div>
           }
         </div>
-        <div class="table-wrap">
+        <!-- Keyboard reachability: a scrolling container with no focusable
+             child cannot be reached or scrolled without a mouse. Every cell in
+             these report tables is plain text, so the region itself has to be
+             the tab stop (axe: scrollable-region-focusable). -->
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Assets by category">
           <table>
             <thead>
               <tr>
@@ -223,7 +227,7 @@ interface AssetReportsSummary {
       <div class="grid g-2">
         <div class="card">
           <div class="card-head"><h3>Due Soon</h3></div>
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Due soon">
             <table>
               <thead>
                 <tr><th>Asset Tag</th><th>Name</th><th>Warranty Expiry</th><th>Maintenance Next Due</th></tr>
@@ -246,7 +250,7 @@ interface AssetReportsSummary {
         </div>
         <div class="card">
           <div class="card-head"><h3>Retired</h3></div>
-          <div class="table-wrap">
+          <div class="table-wrap" tabindex="0" role="region" aria-label="Retired assets">
             <table>
               <thead>
                 <tr><th>Asset Tag</th><th>Name</th><th>Retired Date</th></tr>

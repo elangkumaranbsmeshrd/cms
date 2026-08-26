@@ -1,6 +1,18 @@
 /* Ported verbatim from prototype/app.css §1 (the approved visual baseline —
    ARCH-3 §5 states this port should be zero-re-derivation). Do not hand-edit
-   a value here without updating the prototype too, or the two diverge. */
+   a value here without updating the prototype too, or the two diverge.
+
+   TWO DELIBERATE DIVERGENCES from the prototype, both marked WCAG below:
+   --text-tertiary and --sidebar-muted. The cross-cutting axe sweep
+   (tests/cross-cutting/accessibility.spec.ts, "zero critical/serious")
+   reported 1,094 [serious] color-contrast nodes over 61 of the 69 screens,
+   and every one of them resolved to just these two tokens — nothing else in
+   the palette failed. They are darkened/lightened by the smallest amount
+   that clears WCAG 2.1 AA 1.4.3 (4.5:1, since every affected node is small
+   text) against the WORST background each one is actually painted on; hue
+   and saturation are held at the prototype's own values so the "control
+   room" greys still read as the same family. prototype/app.css should be
+   re-synced to these three values — it is outside this change's file set. */
 
 :root {
   --canvas: #f1f2f5;
@@ -13,7 +25,17 @@
 
   --text-primary: #14171d;
   --text-secondary: #545b68;
-  --text-tertiary: #878e9c;
+  /* WCAG — was #878e9c. The single biggest source of contrast failures: hints,
+     table sub-text, .cell-sub, .empty copy, placeholders, .spec-ref, .crumb
+     links and every .kpi-foot are all painted in it, and it failed on all four
+     light surfaces it lands on (3.29:1 on --surface, 3.10 on --surface-sunk,
+     2.94 on --canvas, 2.86 on --neutral-bg — .spec-ref's chip). Held at the
+     prototype's hue 220°/sat 9.6% and walked down in HSL lightness only, to
+     the first step where the WORST of those four clears 4.5:1: --neutral-bg
+     4.53, --canvas 4.66, --surface-sunk 4.91, --surface 5.22. Still a clear
+     step lighter than --text-secondary (6.83 on --surface), so the three-tier
+     text hierarchy the design leans on survives. */
+  --text-tertiary: #656d7b;
   --text-inverse: #ffffff;
 
   --accent: #2a4bd7;
@@ -34,7 +56,16 @@
   --sidebar-text: #959daf;
   --sidebar-text-active: #ffffff;
   --sidebar-border: #232833;
-  --sidebar-muted: #666e80;
+  /* WCAG — was #666e80, 3.50:1 on the light-mode graphite --sidebar-bg
+     (#14171e). This one token carries every .sub-item label (the real route
+     links — 59 failing nodes per sweep), every .nav-label section heading and
+     the "CMS" line in .brand-text, plus .login-brand span / .login-foot on the
+     login art panel, which uses the same graphite ground. Lightened along the
+     prototype's own hue 221°/sat 11% to 4.58:1. Not re-declared in the dark
+     block below on purpose: dark's --sidebar-bg (#0a0c11) is DARKER than
+     light's, so the one value clears both themes (5.00:1 in dark).
+     --sidebar-text (#959daf, 6.59:1) already passed and is left alone. */
+  --sidebar-muted: #788194;
 
   --shadow-sm: 0 1px 2px rgba(16, 19, 26, .06);
   --shadow-md: 0 6px 20px rgba(16, 19, 26, .10), 0 1px 3px rgba(16, 19, 26, .07);
@@ -62,7 +93,17 @@
 
   --text-primary: #eceef2;
   --text-secondary: #9fa7b6;
-  --text-tertiary: #6b7382;
+  /* WCAG — was #6b7382. The axe sweep only ever runs in light (UiStore.theme
+     defaults to 'light' and is session-only), so this never showed up in the
+     report — but re-running the same scan with data-theme="dark" forced on
+     reproduces the failure node-for-node: 3.86:1 on --surface, 3.99 on
+     --surface-sunk, 4.09 on --canvas, 3.49 on --neutral-bg. Same treatment as
+     the light value, mirrored: hue 219°/sat 9.7% held, lightness walked UP to
+     the first step clearing 4.5:1 against the worst of them (--neutral-bg
+     4.56, --surface-raised 4.76, --surface 5.04, --surface-sunk 5.20,
+     --canvas 5.34). Fixing light while leaving dark at 3.49 would not have
+     been a fix. */
+  --text-tertiary: #7e8695;
   --text-inverse: #0a0c11;
 
   --accent: #7592ff;

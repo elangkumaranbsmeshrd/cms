@@ -58,8 +58,19 @@ h1, h2, h3, h4 { margin: 0; }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 5px; letter-spacing: .01em; }
 .field .req { color: var(--danger); }
+/* `color` is the one divergence from the prototype's own .input (app.css:150),
+   which never declared it — and neither did this port. A form control does not
+   inherit colour from its ancestors: with nothing set it falls back to the UA
+   default (black), which is invisible against --surface in dark mode. Re-running
+   the axe scan with data-theme="dark" measured these at 1.13:1 (#000000 on
+   #111419) across every form and every Expense filter row — you could not read
+   what you had typed. Every sibling control in this design system already sets
+   it (.fselect/.fsearch and .searchbox input below), so this is the omission
+   being closed, not a new decision. In light mode it is a no-op in all but
+   name: UA black to --text-primary #14171d. */
 .input {
   width: 100%; height: 36px; padding: 0 11px; background: var(--surface);
+  color: var(--text-primary);
   border: 1px solid var(--border); border-radius: var(--r-md); font-size: 13px;
   transition: border-color .12s, box-shadow .12s;
 }
@@ -71,6 +82,24 @@ select.input {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23878e9c' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 9px center;
 }
+/* .input.sm — the filter-row scale. Only .btn.sm was ported (components.css,
+   from app.css:351), so the ~40 `<select class="input sm">` / `<input class=
+   "input sm">` controls in the Expense filter rows (all-expenses,
+   my-expenses, expenses/approvals) fell back to the full 36px .input and
+   stood a head taller than the .fselect / .fsearch / .btn.sm sitting beside
+   them in the same .filter-row. Matched to .fselect's own 28px/12px/0 9px
+   rather than to .btn.sm's 26px, because that is what these actually sit
+   next to. All 42 usages are inside a .filter-row, which is why the base
+   .input's width:100% is dropped here too — a 100%-wide flex item takes a
+   line to itself, so the Expense filters were stacking one per row instead of
+   flowing. The select override re-states the chevron gutter: .input.sm beats
+   `select.input` on specificity and would otherwise let the label run under
+   the arrow. */
+.input.sm { height: 28px; width: auto; max-width: 260px; font-size: 12px; padding: 0 9px; }
+select.input.sm { padding-right: 26px; }
+/* A multi-select has to be free to show more than one option — the fixed
+   height above would clip its list to a line and a half. */
+select.input.sm[multiple] { height: auto; padding: 4px 9px; }
 /* A DERIVED value — computed by the server (or previewed from what has been
    typed) and never editable. Deliberately not styled as an .input: an input
    box with a value you cannot change reads as a broken field. Same height as
@@ -81,6 +110,17 @@ select.input {
 }
 /* The per-field help line the prototype shows under nearly every input. */
 .field .hint { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; line-height: 1.45; }
+/* .hint standing on its own — 156 template usages (`<p class="hint">…`,
+   `<div class="hint">…`) for a muted aside that is NOT inside a .field or an
+   .empty: "The money summary above is not repeated here", the read-only
+   explanations on Compliance → Certificates, the load-error line on the asset
+   sub-screens. The prototype only ever wrote .hint as a descendant
+   (app.css:626 .field .hint, app.css:556 .empty .hint), so the port grew no
+   base rule and all 156 rendered as ordinary 13px --text-primary body copy —
+   an aside shouting as loudly as the content it annotates. Same values as the
+   .field variant; the two contextual rules above/below still win where they
+   differ (.empty .hint keeps its own 11.5px). */
+.hint { font-size: 11px; color: var(--text-tertiary); line-height: 1.45; }
 /* A field that needs the full width of the two-column form grid. */
 .field.span-2 { grid-column: 1 / -1; }
 .btn-block { width: 100%; height: 38px; justify-content: center; font-size: 13.5px; font-weight: 600; }

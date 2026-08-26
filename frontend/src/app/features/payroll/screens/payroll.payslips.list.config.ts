@@ -146,12 +146,17 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       kind: 'tristate',
       transport: 'server',
     },
+    // Created By and Last Modified By are both people pickers, and the filter
+    // chrome renders only allLabel inside the <select> — f.label reaches a
+    // title tooltip and nothing more. Each therefore names its own field; the
+    // 'Anyone' the pair used to share made them indistinguishable on screen
+    // and identical to a screen reader.
     {
       key: 'created_by',
       label: 'Created By',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Anyone',
+      allLabel: 'Created by Anyone',
       superAdminOnly: true,
       optionsFromRows: (rows, refData) => {
         const seen = new Map<string, string>();
@@ -166,7 +171,7 @@ const config: ListScreenConfig<PayslipAdminRow> = {
       label: 'Last Modified By',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Anyone',
+      allLabel: 'Modified by Anyone',
       superAdminOnly: true,
       optionsFromRows: (rows, refData) => {
         const seen = new Map<string, string>();

@@ -51,7 +51,21 @@ const config: ListScreenConfig<MyProjectRow> = {
     { key: 'end_date', header: 'End Date', type: 'date' },
   ],
   defaultPageSize: 25,
-  emptyText: "You aren't on any project yet.",
+  // §2.8 specifies this string verbatim — "You're not assigned to any projects
+  // yet." — and repeats it twice more (02-employee-module.md's own empty-state
+  // roll-up, and 10-project-module.md §Directory for the Employee-with-no-
+  // assignments case). The previous wording, "You aren't on any project yet.",
+  // meant the same thing in different words; these strings are pinned verbatim
+  // precisely so one fact reads identically wherever it surfaces, so the
+  // spec's own sentence wins over a paraphrase of it.
+  //
+  // Deliberately no call to action under it. An employee cannot create a
+  // project — creation lives on Project Directory's "+ Add Project"
+  // (project.directory.list.config.ts), and this screen is the employee-facing
+  // view of work someone else staffed them onto. A "path forward" here would
+  // either point a role at something it cannot do, or duplicate the Directory's
+  // own create affordance onto a screen the spec deliberately keeps read-only.
+  emptyText: "You're not assigned to any projects yet.",
 };
 
 export default config;

@@ -93,7 +93,12 @@ const config: ListScreenConfig<MyTaskOrBugRow> = {
     { key: 'due_date', header: 'Due Date', type: 'date' },
   ],
   defaultPageSize: 25,
-  emptyText: 'Nothing assigned to you right now.',
+  // The other half of §2.8's verbatim empty state, the pair to My Projects':
+  // "No tasks assigned to you." The previous wording had borrowed My Tickets'
+  // phrasing ("Nothing assigned to you right now.") instead. "Tasks" covers
+  // the bugs in this union too — that is the spec's own shorthand for this
+  // combined list, not an omission.
+  emptyText: 'No tasks assigned to you.',
 };
 
 export default config;

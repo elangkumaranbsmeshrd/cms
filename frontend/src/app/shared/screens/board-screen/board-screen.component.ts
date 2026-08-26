@@ -89,11 +89,24 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
       <div class="form-error" style="margin: 0 0 12px;">{{ actionError() }}</div>
     }
 
+    <!-- Same [attr.aria-label]-on-every-control rule as list-screen.component.ts's
+         filter bar — see the long comment there for why a [title] (or a
+         [placeholder]) is a tooltip and not a label, and why the axe sweep
+         counted those as [serious] label-title-only on every board screen.
+         This component re-implements the filter chrome rather than sharing a
+         template (see this file's header comment), so the fix has to be
+         repeated here rather than inherited. The title attributes stay. -->
     <div class="filterbar">
       <div class="filter-row">
         <div class="searchbox">
           <span class="s-icon"><app-icon name="search" [size]="14" [width]="2" /></span>
-          <input type="search" [placeholder]="searchPlaceholder()" [value]="query()" (input)="setQuery($any($event.target).value)" />
+          <input
+            type="search"
+            [placeholder]="searchPlaceholder()"
+            [attr.aria-label]="searchPlaceholder()"
+            [value]="query()"
+            (input)="setQuery($any($event.target).value)"
+          />
         </div>
 
         @for (f of visibleFilters(); track f.key) {
@@ -116,19 +129,23 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
               </span>
             }
             @case ('daterange') {
-              <select class="fselect" [title]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="datePreset(f)" (change)="setPreset(f, $any($event.target).value)">
                 <option value="">{{ f.allLabel ?? f.label }}</option>
                 @for (p of presets(); track p.value) {
                   <option [value]="p.value">{{ p.label }}</option>
                 }
               </select>
               @if (datePreset(f) === CUSTOM) {
-                <input class="fsearch" type="date" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
-                <input class="fsearch" type="date" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
+                <!-- Nameless in every sense before this: no title, no
+                     placeholder, and an empty date input shows no text at all.
+                     Only unflagged by axe because they appear after the preset
+                     is switched to "Custom", which a crawler never does. -->
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' from'" [value]="dateFrom(f)" (change)="setCustomDate(f, 'from', $any($event.target).value)" style="max-width: 150px;" />
+                <input class="fsearch" type="date" [attr.aria-label]="f.label + ' to'" [value]="dateTo(f)" (change)="setCustomDate(f, 'to', $any($event.target).value)" style="max-width: 150px;" />
               }
             }
             @case ('tristate') {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? f.label + ' — Any' }}</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
@@ -141,17 +158,17 @@ import { RoleButtonDirective } from '../../ui/role-button.directive';
                    template, per this file's own header comment), a real gap
                    only exposed once a board config actually declared a
                    numberrange filter (Opportunity's Value/Probability). -->
-              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Min'" [value]="numberMin(f)" (change)="setNumberRange(f, 'min', $any($event.target).value)" style="max-width: 110px;" />
-              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Max'" [value]="numberMax(f)" (change)="setNumberRange(f, 'max', $any($event.target).value)" style="max-width: 110px;" />
+              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Min'" [attr.aria-label]="f.label + ' Min'" [value]="numberMin(f)" (change)="setNumberRange(f, 'min', $any($event.target).value)" style="max-width: 110px;" />
+              <input class="fsearch" type="number" inputmode="decimal" [placeholder]="f.label + ' Max'" [attr.aria-label]="f.label + ' Max'" [value]="numberMax(f)" (change)="setNumberRange(f, 'max', $any($event.target).value)" style="max-width: 110px;" />
             }
             @case ('text') {
-              <input class="fsearch" type="search" [placeholder]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)" />
+              <input class="fsearch" type="search" [placeholder]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)" />
             }
             @case ('number') {
-              <input class="fsearch" type="number" inputmode="numeric" [placeholder]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)" style="max-width: 110px;" />
+              <input class="fsearch" type="number" inputmode="numeric" [placeholder]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)" style="max-width: 110px;" />
             }
             @default {
-              <select class="fselect" [title]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
+              <select class="fselect" [title]="f.label" [attr.aria-label]="f.label" [value]="asString(f)" (change)="setFilter(f.key, $any($event.target).value || null)">
                 <option value="">{{ f.allLabel ?? 'All ' + f.label }}</option>
                 @for (opt of optionsFor(f); track opt.value) {
                   <option [value]="opt.value">{{ opt.label }}</option>

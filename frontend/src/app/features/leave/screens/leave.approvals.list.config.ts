@@ -119,9 +119,14 @@ const config: ListScreenConfig<LeaveApprovalRow> = {
       allLabel: 'All Statuses',
       options: STATUS_OPTIONS,
     },
-    { key: 'applied', label: 'Applied On', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'applied' },
-    { key: 'date', label: 'Leave Dates', kind: 'daterange', transport: 'server', allLabel: 'All Dates', param: 'date' },
-    { key: 'days', label: 'Days', kind: 'numberrange', transport: 'server', allLabel: 'Any', param: 'days' },
+    // Two date ranges on one filter row, and the chrome renders only allLabel
+    // inside the <select> — f.label is a title tooltip. When the application
+    // was submitted and when the leave itself falls are entirely different
+    // questions, so a shared 'All Dates' on both was actively misleading, not
+    // merely repetitive.
+    { key: 'applied', label: 'Applied On', kind: 'daterange', transport: 'server', allLabel: 'All Applied Dates', param: 'applied' },
+    { key: 'date', label: 'Leave Dates', kind: 'daterange', transport: 'server', allLabel: 'All Leave Dates', param: 'date' },
+    { key: 'days', label: 'Days', kind: 'numberrange', transport: 'server', allLabel: 'Any Length', param: 'days' },
     {
       // §2.2's own named addition: "the real failure mode there is a request
       // aging rather than being refused." Min-only in practice (Max is the
@@ -130,7 +135,7 @@ const config: ListScreenConfig<LeaveApprovalRow> = {
       label: 'Pending (days)',
       kind: 'numberrange',
       transport: 'server',
-      allLabel: 'Any',
+      allLabel: 'Any Wait',
       param: 'pending_days',
     },
   ],

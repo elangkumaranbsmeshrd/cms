@@ -113,13 +113,13 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       allLabel: 'All Statuses',
       options: EMPLOYEE_STATUS_OPTIONS,
     },
-    { key: 'remaining', label: 'Remaining', kind: 'numberrange', transport: 'server', allLabel: 'Any', param: 'remaining' },
+    { key: 'remaining', label: 'Remaining', kind: 'numberrange', transport: 'server', allLabel: 'Any Balance', param: 'remaining' },
     {
       key: 'negative_only',
       label: 'Negative Balance Only',
       kind: 'tristate',
       transport: 'server',
-      allLabel: 'Any',
+      allLabel: 'Any Balance Sign',
     },
     {
       // §2.3's own "what the year-end carry-forward run is planned against."
@@ -128,7 +128,7 @@ const config: ListScreenConfig<LeaveBalanceMgmtRow> = {
       label: 'Unused Above (days)',
       kind: 'numberrange',
       transport: 'server',
-      allLabel: 'Any',
+      allLabel: 'Any Unused',
       param: 'unused_above_days',
     },
   ],

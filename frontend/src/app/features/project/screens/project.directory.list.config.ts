@@ -51,8 +51,12 @@ export const PROJECT_DIRECTORY_FILTERS: readonly FilterDef<ProjectRow>[] = [
   { key: 'financial_year_id', label: 'Financial Year', kind: 'select', transport: 'server', allLabel: 'All Financial Years', optionsRef: PROJECT_FY_REF },
   { key: 'overdue_only', label: 'Overdue', kind: 'tristate', transport: 'server', allLabel: 'Overdue — Any' },
   { key: 'created', label: 'Created On', kind: 'daterange', transport: 'server' },
-  { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
-  { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
+  // Each names its own field: the filter chrome renders only allLabel inside
+  // the <select> (f.label reaches a title tooltip and nothing more), so the
+  // 'Anyone' these two used to share left them indistinguishable — here and
+  // on the Customer record's Projects tab, which reuses this array.
+  { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
+  { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
 ];
 
 const config: ListScreenConfig<ProjectRow> = {

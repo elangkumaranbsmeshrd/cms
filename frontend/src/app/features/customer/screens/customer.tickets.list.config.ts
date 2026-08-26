@@ -43,14 +43,20 @@ export function buildCustomerTicketsListConfig(customerId: string): ListScreenCo
         key: 'assigned_to', label: 'Assigned Staff', kind: 'multiselect', transport: 'server', allLabel: 'All Staff',
         optionsRef: TICKET_EMPLOYEE_REF, hideWhenScopeIsOwn: true,
       },
-      { key: 'raised_by', label: 'Raised By', kind: 'select', transport: 'server', allLabel: 'Anyone', optionsFromRows: raisedByOptions },
-      { key: 'raised_date', label: 'Raised Date', kind: 'daterange', transport: 'server', allLabel: 'All Dates' },
-      { key: 'due_date', label: 'Due Date', kind: 'daterange', transport: 'server', allLabel: 'All Dates' },
-      { key: 'resolved_closed', label: 'Resolved/Closed', kind: 'daterange', transport: 'server', allLabel: 'All Dates' },
+      // Three people pickers (Raised By plus the two Super Admin extras below)
+      // and three date ranges sit in one filter row, and the chrome renders
+      // only allLabel inside each <select> — f.label reaches a title tooltip
+      // and nothing more. So every one of them names its own field: bare
+      // 'Anyone'/'All Dates' repeated left the dropdowns indistinguishable on
+      // screen and identical to a screen reader.
+      { key: 'raised_by', label: 'Raised By', kind: 'select', transport: 'server', allLabel: 'Raised by Anyone', optionsFromRows: raisedByOptions },
+      { key: 'raised_date', label: 'Raised Date', kind: 'daterange', transport: 'server', allLabel: 'All Raised Dates' },
+      { key: 'due_date', label: 'Due Date', kind: 'daterange', transport: 'server', allLabel: 'All Due Dates' },
+      { key: 'resolved_closed', label: 'Resolved/Closed', kind: 'daterange', transport: 'server', allLabel: 'All Resolved/Closed Dates' },
       { key: 'unassigned_only', label: 'Unassigned Only', kind: 'tristate', transport: 'server', allLabel: 'Any' },
       { key: 'satisfaction_rating', label: 'Satisfaction Rating', kind: 'select', transport: 'server', allLabel: 'Any Rating', options: TICKET_SATISFACTION_OPTIONS },
-      { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
-      { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
+      { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', superAdminOnly: true, optionsFromRows: createdByOptions },
+      { key: 'last_modified_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', superAdminOnly: true, optionsFromRows: lastModifiedByOptions },
     ],
     columns: [
       { key: 'ticket_number', header: 'Ticket Number', type: 'code' },

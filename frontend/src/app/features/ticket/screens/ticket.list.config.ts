@@ -128,6 +128,12 @@ const config: ListScreenConfig<TicketRow> = {
       optionsRef: TICKET_EMPLOYEE_REF,
       hideWhenScopeIsOwn: true,
     },
+    // Three people pickers (Raised By plus the two Super Admin extras at the
+    // bottom of this array) and three date ranges share one filter row here,
+    // and the chrome renders only allLabel inside each <select> — f.label
+    // reaches a title tooltip and nothing more. So each all-options text names
+    // its own field: repeating 'Anyone'/'All Dates' left those dropdowns
+    // indistinguishable on screen and identical to a screen reader.
     {
       // list_tickets's own `raised_by` param takes ONE value, not a list —
       // confirmed against api/v1/tickets.py — the one filter on this screen
@@ -136,11 +142,11 @@ const config: ListScreenConfig<TicketRow> = {
       label: 'Raised By',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Anyone',
+      allLabel: 'Raised by Anyone',
       optionsFromRows: raisedByOptions,
     },
-    { key: 'raised_date', label: 'Raised Date', kind: 'daterange', transport: 'server', allLabel: 'All Dates' },
-    { key: 'due_date', label: 'Due Date', kind: 'daterange', transport: 'server', allLabel: 'All Dates' },
+    { key: 'raised_date', label: 'Raised Date', kind: 'daterange', transport: 'server', allLabel: 'All Raised Dates' },
+    { key: 'due_date', label: 'Due Date', kind: 'daterange', transport: 'server', allLabel: 'All Due Dates' },
     {
       // The real query param is a single OR across resolved_at/closed_at
       // (api/v1/tickets.py: `or_(Ticket.resolved_at >= ..., Ticket.closed_at
@@ -150,7 +156,7 @@ const config: ListScreenConfig<TicketRow> = {
       label: 'Resolved/Closed',
       kind: 'daterange',
       transport: 'server',
-      allLabel: 'All Dates',
+      allLabel: 'All Resolved/Closed Dates',
     },
     { key: 'unassigned_only', label: 'Unassigned Only', kind: 'tristate', transport: 'server', allLabel: 'Any' },
     {
@@ -172,7 +178,7 @@ const config: ListScreenConfig<TicketRow> = {
       label: 'Created By',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Anyone',
+      allLabel: 'Created by Anyone',
       superAdminOnly: true,
       optionsFromRows: createdByOptions,
     },
@@ -181,7 +187,7 @@ const config: ListScreenConfig<TicketRow> = {
       label: 'Last Modified By',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Anyone',
+      allLabel: 'Modified by Anyone',
       superAdminOnly: true,
       optionsFromRows: lastModifiedByOptions,
     },

@@ -96,14 +96,29 @@ function parseIsoDate(iso: string | null | undefined): { y: number; m: number; d
       </div>
     }
 
+    <!-- Same [attr.aria-label]-on-every-control rule as list-screen.component.ts's
+         filter bar — see the long comment there for why the title="Month" /
+         title="From" these controls used to be labelled by is a tooltip and not
+         a label, and why the axe sweep counted that as [serious]
+         label-title-only on /masters/holidays and every other calendar screen.
+         The aria-label repeats the title text verbatim rather than inventing a
+         nicer phrasing: the whole defect is that the tooltip was never being
+         announced, not that it said the wrong thing, and keeping the two in
+         lockstep is what stops them drifting apart later. The titles stay. -->
     <div class="filterbar">
       <div class="filter-row">
         <div class="searchbox">
           <span class="s-icon"><app-icon name="search" [size]="14" [width]="2" /></span>
-          <input type="search" [placeholder]="'Search ' + recordNounPlural() + '…'" [value]="query()" (input)="query.set($any($event.target).value)" />
+          <input
+            type="search"
+            [placeholder]="'Search ' + recordNounPlural() + '…'"
+            [attr.aria-label]="'Search ' + recordNounPlural()"
+            [value]="query()"
+            (input)="query.set($any($event.target).value)"
+          />
         </div>
 
-        <select class="fselect" title="Month" [value]="monthValue() ?? ''" (change)="monthValue.set($any($event.target).value || null)">
+        <select class="fselect" title="Month" aria-label="Month" [value]="monthValue() ?? ''" (change)="monthValue.set($any($event.target).value || null)">
           <option value="">All Months</option>
           @for (opt of monthOptions(); track opt.value) {
             <option [value]="opt.value">{{ opt.label }}</option>
@@ -111,7 +126,7 @@ function parseIsoDate(iso: string | null | undefined): { y: number; m: number; d
         </select>
 
         @if (typeOptionsResolved().length) {
-          <select class="fselect" title="Type" [value]="typeValue() ?? ''" (change)="typeValue.set($any($event.target).value || null)">
+          <select class="fselect" title="Type" aria-label="Type" [value]="typeValue() ?? ''" (change)="typeValue.set($any($event.target).value || null)">
             <option value="">All Types</option>
             @for (opt of typeOptionsResolved(); track opt.value) {
               <option [value]="opt.value">{{ opt.label }}</option>
@@ -120,7 +135,7 @@ function parseIsoDate(iso: string | null | undefined): { y: number; m: number; d
         }
 
         @if (financialYears().length) {
-          <select class="fselect" title="Financial Year" [value]="finYearValue() ?? ''" (change)="finYearValue.set($any($event.target).value || null)">
+          <select class="fselect" title="Financial Year" aria-label="Financial Year" [value]="finYearValue() ?? ''" (change)="finYearValue.set($any($event.target).value || null)">
             <option value="">All Financial Years</option>
             @for (fy of financialYears(); track fy.id) {
               <option [value]="fy.id">{{ fy.label ?? fy.start_date.slice(0, 4) }}</option>
@@ -128,8 +143,8 @@ function parseIsoDate(iso: string | null | undefined): { y: number; m: number; d
           </select>
         }
 
-        <input class="fsearch" type="date" title="From" [value]="dateFromValue() ?? ''" (change)="dateFromValue.set($any($event.target).value || null)" style="max-width: 150px;" />
-        <input class="fsearch" type="date" title="To" [value]="dateToValue() ?? ''" (change)="dateToValue.set($any($event.target).value || null)" style="max-width: 150px;" />
+        <input class="fsearch" type="date" title="From" aria-label="From" [value]="dateFromValue() ?? ''" (change)="dateFromValue.set($any($event.target).value || null)" style="max-width: 150px;" />
+        <input class="fsearch" type="date" title="To" aria-label="To" [value]="dateToValue() ?? ''" (change)="dateToValue.set($any($event.target).value || null)" style="max-width: 150px;" />
 
         <div class="seg" style="margin-left: auto;">
           <button type="button" [class.on]="view() === 'cal'" (click)="view.set('cal')">

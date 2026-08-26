@@ -81,8 +81,11 @@ const config: ListScreenConfig<CreditNoteRow> = {
     // (confirmed against list_credit_notes' own Query param names).
     { key: 'credit_note_date', label: 'Credit Note Date', kind: 'daterange', transport: 'server', param: 'date' },
     { key: 'credit_amount', label: 'Credit Amount', kind: 'numberrange', transport: 'server' },
-    { key: 'raised_by', label: 'Raised By', kind: 'select', transport: 'server', allLabel: 'Anyone', optionsFromRows: raisedByOptions },
-    { key: 'approved_by', label: 'Approved By', kind: 'select', transport: 'server', allLabel: 'Anyone', optionsFromRows: approvedByOptions },
+    // Both of these are people pickers and the chrome shows only allLabel
+    // inside the <select> (f.label is a title tooltip), so each names its own
+    // role — a shared 'Anyone' made the two adjacent dropdowns read alike.
+    { key: 'raised_by', label: 'Raised By', kind: 'select', transport: 'server', allLabel: 'Raised by Anyone', optionsFromRows: raisedByOptions },
+    { key: 'approved_by', label: 'Approved By', kind: 'select', transport: 'server', allLabel: 'Approved by Anyone', optionsFromRows: approvedByOptions },
   ],
   defaultPageSize: 25,
   emptyText: 'No credit notes yet.',

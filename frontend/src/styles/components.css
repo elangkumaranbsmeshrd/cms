@@ -153,6 +153,18 @@ app-sidebar { display: contents; }
 .page-title { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 2px; display: flex; align-items: center; gap: 9px; }
 .page-sub { font-size: 12.5px; color: var(--text-secondary); margin: 0; max-width: 88ch; }
 .page-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+/* A shape rendered with [embedded]="true" is a TAB BODY inside a record
+   screen, so it suppresses its own title block — the host's .rec-head and
+   .tabs already said what this is. That left .page-head holding nothing but
+   the action buttons, and in ConversationScreenComponent's case holding
+   nothing at all. This modifier was on all eight embeddable shapes but was
+   never defined anywhere, so an empty head still claimed a full page's 14px
+   of bottom margin and painted a phantom gap between the tab strip and the
+   tab's first card. Margin moves onto .page-actions so it is only spent when
+   there is actually something to space away from; .tabs has already paid the
+   16px above. */
+.page-head.embedded { margin-bottom: 0; }
+.page-head.embedded .page-actions { margin-bottom: 10px; }
 .spec-ref {
   font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: .02em;
   padding: 2px 6px; border-radius: 4px; background: var(--neutral-bg); color: var(--text-tertiary);
@@ -172,6 +184,14 @@ app-sidebar { display: contents; }
 .btn.ghost:hover { background: var(--surface-sunk); color: var(--text-primary); }
 .btn.sm { height: 26px; padding: 0 8px; font-size: 11.5px; }
 .btn[disabled], .btn.disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+/* prototype app.css:352 — a destructive-but-not-primary action tints its
+   label rather than its fill, so "Close ticket" reads as consequential
+   without competing with the screen's real primary button. Missed in the
+   original port, which left ticket.detail.component.ts's `class="btn no"`
+   indistinguishable from a plain .btn. The prototype's matching `.btn.ok` is
+   deliberately NOT ported: nothing in the app uses it, and an unused rule is
+   just another thing to keep true. */
+.btn.no { color: var(--danger); }
 
 /* Search input with a leading magnifier — prototype app.css:221-229. The bare
    .fsearch it replaces had no icon and stretched to fill the row. */
@@ -235,8 +255,17 @@ app-sidebar { display: contents; }
 .chip .rm { width: 15px; height: 15px; display: grid; place-items: center; border-radius: 50%; cursor: pointer; opacity: .6; font-size: 13px; line-height: 1; }
 .chip .rm:hover { background: rgba(42, 75, 215, .15); opacity: 1; }
 .chips .count { margin-left: auto; font-size: 11.5px; color: var(--text-tertiary); font-family: "IBM Plex Mono", monospace; }
-.chips .clear { font-size: 11.5px; color: var(--text-secondary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.chips .clear:hover { color: var(--danger); }
+/* The prototype only ever put .clear inside .chips (app.css:380), but the
+   Angular screens reuse the same affordance outside the chip strip: the
+   filtered-empty state renders `<p class="hint"><span class="clear"
+   role="button">Clear all filters</span></p>` (list-screen, calendar-screen)
+   and three screens put a bare "Clear all" at the end of a filter row
+   (asset.reports, customer.activities, my-leave). Outside .chips it matched
+   nothing — the one control that gets a user out of a zero-result screen was
+   painting as plain text, with no underline and no pointer to say it could be
+   clicked. Broadened rather than duplicated so the two stay in step. */
+.clear, .chips .clear { font-size: 11.5px; color: var(--text-secondary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.clear:hover, .chips .clear:hover { color: var(--danger); }
 
 /* ==================== TABLE ==================== */
 .table-wrap { overflow-x: auto; width: 100%; }
@@ -282,8 +311,17 @@ td.r, th.r { text-align: right; }
   font-size: 11px; font-weight: 600; white-space: nowrap; border: 1px solid transparent;
 }
 .badge-s::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
-.b-ok { background: var(--success-bg); color: var(--success); border-color: var(--success-line); }
-.b-warn { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-line); }
+/* Two spellings reach these same two variants. The prototype named them
+   .b-ok / .b-warn and 83 template usages follow it, but 12 others (badge
+   columns written later — emp.salary-structure, my-assets, my-profile,
+   customer.contacts, emp.insurance, emp.leave-attendance,
+   my-tax-declarations) say .b-success / .b-warning, and those badges were
+   rendering as a bare .badge-s: no fill, no border, no status colour, i.e.
+   "Compliant" and "Pending Approval" looked identical. Aliased here rather
+   than left broken; the templates are the better place to normalise this,
+   but they belong to other work in flight. */
+.b-ok, .b-success { background: var(--success-bg); color: var(--success); border-color: var(--success-line); }
+.b-warn, .b-warning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-line); }
 .b-danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-line); }
 .b-info { background: var(--info-bg); color: var(--info); border-color: var(--info-line); }
 .b-neutral { background: var(--neutral-bg); color: var(--neutral-text); border-color: var(--neutral-line); }
@@ -310,7 +348,17 @@ td.r, th.r { text-align: right; }
 .empty { padding: 30px 16px; text-align: center; color: var(--text-tertiary); }
 .empty .ico { width: 38px; height: 38px; margin: 0 auto 9px; border-radius: 50%; background: var(--surface-sunk); display: grid; place-items: center; border: 1px solid var(--border); }
 .empty p { margin: 0; font-size: 12.5px; }
-.empty .hint { font-size: 11.5px; margin-top: 3px; opacity: .8; }
+/* opacity:.8 removed (it was in the prototype's own rule). Multiplying a text
+   colour by an alpha silently re-derives it against whatever is behind: at .8
+   the WCAG-tuned --text-tertiary blended back out to #848a95 on --surface —
+   3.47:1, the last color-contrast node the axe sweep still reported after the
+   token fix (/payroll/adhoc-adjustments, "Clear all filters"). No opacity
+   clears the bar on every surface either (.95 still measures 4.44 on
+   --surface-sunk), so the dimming has to go rather than be re-tuned: an
+   opacity on body text makes a token's contrast unverifiable by construction.
+   The 1px size step below --empty p is what now carries the "this is the
+   secondary line" read, which is how the rest of the system does it. */
+.empty .hint { font-size: 11.5px; margin-top: 3px; }
 
 /* ==================== CALLOUT ====================
    Ported verbatim from prototype/app.css:559-568 (U.note/.rbac-note) — the
@@ -627,6 +675,24 @@ td.r, th.r { text-align: right; }
 .form-section-head h4 { font-size: 12.5px; font-weight: 650; letter-spacing: -.01em; }
 .form-section-head .note { font-size: 11.5px; color: var(--text-tertiary); margin-left: auto; }
 
+/* The sticky-feeling action bar that closes a form — prototype app.css:643-647
+   (U.formbar, app-core.js:375). Never ported, so the only screen that uses it
+   (masters/holidays-import) was rendering its confirm step as three bare divs:
+   no card, no border, the warning text and the Import button stacked flush
+   against the preview table above them.
+   One divergence from the prototype's own markup, which is why .note/.actions
+   are not simply reused here: the prototype emits `<span class="note">` plus
+   loose <button>s, while holidays-import.component.ts groups its buttons in a
+   .formbar-actions wrapper. The note keeps the prototype's margin-right:auto
+   so the actions still land hard right in both shapes. */
+.formbar {
+  display: flex; align-items: center; gap: 8px; padding: 11px 14px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-lg); margin-top: 16px;
+  box-shadow: var(--shadow-sm); flex-wrap: wrap;
+}
+.formbar .note, .formbar-note { font-size: 11.5px; color: var(--text-tertiary); margin-right: auto; }
+.formbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
 /* ==================== LINE ITEMS / TOTALS ==================== */
 /* The 'document' shape's editable line-items table and totals block
    (app-screens2.js:908-924) — ported verbatim from app.css:649-663. */
@@ -811,6 +877,15 @@ td.r, th.r { text-align: right; }
 .mfield .bx { width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid var(--border-strong); display: grid; place-items: center; flex: none; }
 .mfield.on .bx { background: var(--warning); border-color: var(--warning); color: #fff; }
 
+/* ==================== ENTRANCE ==================== */
+/* prototype app.css:906-907, ported verbatim. The login, forgot-password and
+   change-password pages all mark their card `class="login-card rise"`, which
+   did nothing at all until now — the class existed only in the prototype.
+   `both` matters: without it the card flashes at opacity 1 for a frame before
+   the animation takes hold. */
+.rise { animation: rise .3s cubic-bezier(.22, .9, .3, 1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 860px) {
   .brand { width: auto; padding: 0 12px; border-right: none; }
@@ -819,4 +894,16 @@ td.r, th.r { text-align: right; }
     transform: translateX(-100%); transition: transform .18s ease; box-shadow: var(--shadow-lg);
   }
   .app.navopen .sidebar { transform: none; }
+}
+
+/* prototype app.css:932, and the reason .rise above can be ported safely.
+   Someone who has asked their OS for reduced motion gets none of it: WCAG 2.1
+   2.3.3 (Animation from Interactions). The blanket `*` is the prototype's own
+   choice and the right one here — the shell animates in a dozen places (.rise,
+   @keyframes pop on every popover, @keyframes slidein on every toast, the
+   sidebar's collapse transition, .qlink's hover lift) and an allow-list would
+   silently miss the next one. Must stay LAST: it wins on specificity ties only
+   by !important, and keeping it at the end also keeps it obvious. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
 }

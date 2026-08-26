@@ -155,12 +155,17 @@ const config: ListScreenConfig<ChangeLogRow> = {
       optionsFromRows: (rows) =>
         [...new Map(rows.filter((r) => r.screen_key).map((r) => [r.screen_key as string, r.screen_label as string])).entries()].map(([value, label]) => ({ value, label })),
     },
+    // A role override and a per-person override are two different audit
+    // questions, and the filter chrome renders only allLabel inside the
+    // <select> — f.label reaches a title tooltip and nothing more. Both
+    // dropdowns reading 'Any Target' therefore hid exactly the distinction
+    // this log exists to make, so each spells out which kind of target it is.
     {
       key: 'target_role_code',
       label: 'Target Role',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Any Target',
+      allLabel: 'Any Target Role',
       options: RBAC_ROLE_OPTIONS,
     },
     {
@@ -168,7 +173,7 @@ const config: ListScreenConfig<ChangeLogRow> = {
       label: 'Target Person',
       kind: 'select',
       transport: 'server',
-      allLabel: 'Any Target',
+      allLabel: 'Any Target Person',
       optionsFromRows: (rows) =>
         [...new Map(rows.filter((r) => r.target_user).map((r) => [r.target_user as string, r.target_user_name as string])).entries()].map(([value, label]) => ({ value, label })),
     },
