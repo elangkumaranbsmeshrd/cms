@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 
 import { SessionStore } from '../core/auth/session.store';
 import { ACCENTS, AccentName, SCALES, UiStore } from '../core/ui/ui.store';
+import { environment } from '../../environments/environment';
 
 type SettingsTab = 'appearance' | 'regional' | 'system' | 'about';
 
@@ -331,7 +332,10 @@ export class SettingsPageComponent {
 
   protected readonly tab = signal<SettingsTab>('appearance');
   protected readonly denseTables = signal(true);
-  protected readonly apiBase = 'http://127.0.0.1:8001/api/v1';
+  /** Read from the environment, never re-declared — a second literal here went
+   * stale the moment the production build started swapping environment.ts, and
+   * would have shown every deployed user a dev URL on the About tab. */
+  protected readonly apiBase = environment.apiBaseUrl;
 
   protected readonly tabDefs: { id: SettingsTab; label: string }[] = [
     { id: 'appearance', label: 'Appearance' },

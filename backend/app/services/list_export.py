@@ -19,14 +19,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Response
+from fastapi import HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.platform import User
 from app.services import excel_engine, pdf_engine
 from app.services.pdf_engine import ColumnSpec
 
-ExportFormat = str  # "pdf" | "excel" — validated at the FastAPI Query layer by each router
+ExportFormat = str  # "pdf" | "excel" — validated HERE, by build_export, for every caller.
+
+# Every list endpoint in this codebase declares `format` as a bare `str | None`
+# Query param, so FastAPI itself never constrains it. This module used to raise
+# a bare ValueError on an unrecognised value, which escaped as an unhandled 500
+# on ~40 endpoints across every module. Validation belongs here, once, rather
+# than in 40 routers that would each have to remember it.
+VALID_EXPORT_FORMATS = ("pdf", "excel")
 
 
 def _format_filter_value(v: Any) -> str | None:
@@ -54,8 +61,15 @@ async def build_export(
     rows: list[dict],
     filters_applied: dict[str, Any],
 ) -> Response:
-    if format not in ("pdf", "excel"):
-        raise ValueError(f"Unknown export format: {format!r}")
+    # Case-insensitive: a client sending "PDF" unambiguously means pdf, and
+    # rejecting that helps nobody. Anything else is a client error (422), never
+    # a 500 — see VALID_EXPORT_FORMATS above for why this lives here.
+    format = (format or "").strip().lower()
+    if format not in VALID_EXPORT_FORMATS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown export format. Use one of: {', '.join(VALID_EXPORT_FORMATS)}",
+        )
     header_lines = _header_lines(title, filters_applied, len(rows), current_user.full_name)
     slug = "".join(c if c.isalnum() else "_" for c in title).strip("_") or "export"
 
