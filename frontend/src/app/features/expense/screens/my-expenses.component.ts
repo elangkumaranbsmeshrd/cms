@@ -346,10 +346,23 @@ export class MyExpensesComponent implements OnInit {
     // referencing a since-deactivated type still resolves
     // to its real name via expense_type_name_snapshot (which needs no
     // lookup at all — kept unfiltered here purely for the picker helpers).
-    this.http.get<ExpenseTypeOption[]>(`${environment.apiBaseUrl}/masters/expense-types`).subscribe({
-      next: (rows) => this.expenseTypes.set(rows),
-      error: () => this.expenseTypes.set([]),
-    });
+    // /options, not the gated masters.expense_types screen — that screen is
+    // Manager/Super-Admin only (seed.py), so Accountant and HR 404'd here and
+    // the picker was simply empty for two of the roles that use this screen
+    // most. claim_type rides along deliberately (masters_lookup.py's
+    // options_extra_fields): §2.1's read-only Claim Type field renders it, so
+    // a server-side filter could not have supplied it.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean; claim_type: string }[]>(
+        `${environment.apiBaseUrl}/masters/expense-types/options`,
+      )
+      .subscribe({
+        next: (rows) =>
+          this.expenseTypes.set(
+            rows.map((r) => ({ id: r.id, name: r.label, claim_type: r.claim_type, is_active: r.is_active })),
+          ),
+        error: () => this.expenseTypes.set([]),
+      });
     // /options, not the gated masters.bank_accounts screen (2026-08-11 RBAC
     // audit fix) — Employee never had standalone `view` on that screen
     // either, so this was silently always empty before. include_inactive=
@@ -360,10 +373,21 @@ export class MyExpensesComponent implements OnInit {
       next: (rows) => this.bankAccounts.set(rows),
       error: () => this.bankAccounts.set([]),
     });
-    this.http.get<TaxHeadOption[]>(`${environment.apiBaseUrl}/masters/taxes`).subscribe({
-      next: (rows) => this.taxHeads.set(rows),
-      error: () => this.taxHeads.set([]),
-    });
+    // /options with the scope + in-force window applied SERVER-side. The
+    // picker only ever renders a head's name, so scope/applies_from/
+    // applies_until never need to cross the wire — which keeps rate_pct, the
+    // cgst/sgst split, fixed_amount and slab bands structurally unreachable
+    // through this route. The server also owns "today", which is the more
+    // authoritative clock for an in-force test than the browser's.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean }[]>(
+        `${environment.apiBaseUrl}/masters/taxes/options`,
+        { params: { scope: ['PURCHASE', 'SALES_AND_PURCHASE'], in_force_on: this.today } },
+      )
+      .subscribe({
+        next: (rows) => this.taxHeads.set(rows.map((r) => ({ id: r.id, tax_name: r.label, is_active: r.is_active }))),
+        error: () => this.taxHeads.set([]),
+      });
     // /options, not the gated vendor.directory screen — same 2026-08-11 RBAC
     // audit fix as Bank Account/Payment Mode/HSN's own picker endpoints.
     // vendor.directory is 'none' for HR/Employee (seed.py), but Vendor is an
@@ -384,7 +408,7 @@ export class MyExpensesComponent implements OnInit {
         error: () => this.purchaseBills.set([]),
       });
     }
-    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearOption[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows),
       error: () => this.financialYears.set([]),
     });
@@ -418,11 +442,10 @@ export class MyExpensesComponent implements OnInit {
     return t.claim_type === 'COMPANY_PAID' ? 'Company-Paid' : 'Reimbursable';
   }
 
+  /** Scope and the in-force window are now applied by the server (see the
+   * /options fetch above), so nothing is left to filter here. */
   protected filteredTaxHeads(): readonly TaxHeadOption[] {
-    const today = this.today;
-    return this.taxHeads().filter(
-      (t) => t.is_active && (t.scope === 'PURCHASE' || t.scope === 'SALES_AND_PURCHASE') && t.applies_from <= today && (!t.applies_until || t.applies_until >= today),
-    );
+    return this.taxHeads();
   }
 
   protected vendorLabel(id: string | null): string {

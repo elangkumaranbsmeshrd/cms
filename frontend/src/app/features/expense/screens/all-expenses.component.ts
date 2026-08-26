@@ -392,10 +392,22 @@ export class AllExpensesComponent implements OnInit {
     // return regardless of what's asked for (expenses.py's list_all_
     // expenses: `.where(ExpenseClaim.claim_type == "REIMBURSABLE")`), so a
     // Company-Paid type would only ever be a dead-end filter option.
-    this.http.get<ExpenseTypeOption[]>(`${environment.apiBaseUrl}/masters/expense-types`).subscribe({
-      next: (rows) => this.expenseTypes.set(rows.filter((t) => t.is_active && t.claim_type === 'REIMBURSABLE')),
-      error: () => this.expenseTypes.set([]),
-    });
+    // /options, not the gated masters.expense_types screen (Manager/Super
+    // Admin only in seed.py). claim_type rides along deliberately — this
+    // screen filters on it, and the same payload feeds the picker helpers.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean; claim_type: string }[]>(
+        `${environment.apiBaseUrl}/masters/expense-types/options`,
+      )
+      .subscribe({
+        next: (rows) =>
+          this.expenseTypes.set(
+            rows
+              .filter((t) => t.is_active && t.claim_type === 'REIMBURSABLE')
+              .map((r) => ({ id: r.id, name: r.label, claim_type: r.claim_type, is_active: r.is_active })),
+          ),
+        error: () => this.expenseTypes.set([]),
+      });
     // /options, not the gated masters.bank_accounts/payment_modes screens
     // (2026-08-11 RBAC audit fix) — same reasoning as company-expenses.component.ts.
     this.http.get<PaymentModeOption[]>(`${environment.apiBaseUrl}/masters/payment-modes/options`).subscribe({
@@ -412,13 +424,18 @@ export class AllExpensesComponent implements OnInit {
         error: () => this.vendors.set([]),
       });
     }
-    this.http.get<DepartmentOption[]>(`${environment.apiBaseUrl}/masters/departments`).subscribe({
-      next: (rows) => this.departments.set(rows),
+    // /options, not the gated masters.departments screen (2026-08 RBAC audit
+    // fix) — Department is Super-Admin-only (seed.py), so this Department
+    // filter was silently always empty for Accountant, this screen's primary
+    // role. Returns {id, label, is_active}; mapped onto DepartmentOption's
+    // existing {id, name} shape so the template below needs no change.
+    this.http.get<{ id: string; label: string }[]>(`${environment.apiBaseUrl}/masters/departments/options`).subscribe({
+      next: (rows) => this.departments.set(rows.map((r) => ({ id: r.id, name: r.label }))),
       error: () => this.departments.set([]),
     });
     // For the Period filter's presets — degrades to calendar-only presets on
     // a 403/empty response, same as ListScreenComponent's own daterange kind.
-    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows ?? []),
       error: () => this.financialYears.set([]),
     });

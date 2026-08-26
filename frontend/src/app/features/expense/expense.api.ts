@@ -103,13 +103,15 @@ export interface PaymentModeOption {
 }
 
 // masters_taxes.py's own field name — NOT "name".
+// Fed by /masters/taxes/options, which applies the scope and in-force-window
+// predicates SERVER-side. scope/applies_from/applies_until are deliberately
+// absent: the picker only ever renders tax_name, so keeping them off the wire
+// keeps the rest of a tax head's row — rate_pct, cgst/sgst, fixed_amount,
+// slab bands — unreachable through a route that has no screen permission.
 export interface TaxHeadOption {
   id: string;
   tax_name: string;
-  scope: string;
   is_active: boolean;
-  applies_from: string;
-  applies_until: string | null;
 }
 
 // vendors.py's own field name — NOT "name".

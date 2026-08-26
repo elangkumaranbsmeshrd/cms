@@ -222,6 +222,7 @@ def build_lookup_router(
     referenced_by: ReferencedBy | None = None,
     create_only_fields: dict[str, tuple[type, Any]] | None = None,
     label_field: str | None = None,
+    options_extra_fields: tuple[str, ...] | None = None,
 ) -> APIRouter:
     """`read_only_fields` are server-computed columns that show up in
     responses but are never caller-writable (e.g. Expense Types'
@@ -248,10 +249,42 @@ def build_lookup_router(
     screen itself, which the spec says they should not be able to do. A
     minimal, non-screen-gated options endpoint is the correct fix: the
     dropdown gets what it needs without granting standalone screen access.
-    Only set this for sub-masters with no sensitive fields at all (Payment
-    Mode, HSN/SAC Code) — a sub-master with any Layer-3-sensitive field
-    should NOT use this, since this route bypasses `apply_field_masking`
-    entirely by construction (it never selects more than `id`+`label_field`).
+    This route bypasses `apply_field_masking` entirely, so the thing to check
+    before setting `label_field` is the LABEL COLUMN ITSELF — the SELECT never
+    names anything but `id`, `label_field` and `is_active`, so no other column
+    on the table is reachable through it no matter how sensitive it is. That
+    is the same reasoning masters_bank_accounts.py's own hand-written
+    `/options` already runs on: Bank Account carries the most sensitive
+    columns in Masters (account_number, ifsc, upi_id) and still has one,
+    precisely because it selects `nickname` and stops. Applied across the
+    factory (2026-08 sweep) the test comes out the same everywhere: every
+    sub-master here labels itself by a plain `name`/`code`/`plan_name`, none
+    of which is a secret. The one worth naming is Insurance Plans, whose row
+    DOES carry money (coverage and both contribution figures) — safe here for
+    exactly the Bank Account reason, and see that registration's own comment
+    in masters_simple.py for which caller therefore still needs the full list
+    route instead. A sub-master whose IDENTIFYING field was itself the secret
+    would be the real exclusion; there is no such lookup in this app today.
+
+    `options_extra_fields` widens that SELECT, and therefore weakens the
+    invariant above from "structurally cannot leak anything else" to "leaks
+    exactly what is named here". That is a real downgrade, so the bar for
+    adding a column is: the CLIENT MUST NEED THE VALUE, not merely need to
+    filter on it. If a caller only wants a narrowed list, the filter belongs
+    on the server as a query parameter and nothing extra crosses the wire —
+    masters_taxes.py's own `/options` does exactly that with `scope` and
+    `in_force_on`, which is why a tax head's rate_pct, cgst/sgst split,
+    fixed_amount and slab bands remain unreachable through it.
+
+    The one opted-in column today is Expense Types' `claim_type`
+    (masters_simple.py). It qualifies because the Expense claim form RENDERS
+    it: §2.1's read-only "Claim Type" field is carried from the selected
+    type's own claim_type, and the picker offers Company-Paid types only to
+    Super Admin/Accountant — so the client genuinely needs the value per row,
+    which a server-side filter cannot supply. It is a two-value enum
+    (REIMBURSABLE | COMPANY_PAID) classifying a category, carrying nothing
+    about any person or amount. Anything with a number in it does not clear
+    this bar.
 
     `create_only_fields` (§3b) are accepted on POST but never on PUT — the
     prototype's Status toggle on every Add form is this shape exactly: "the
@@ -313,11 +346,20 @@ def build_lookup_router(
             current_user: User = Depends(get_current_user),
             include_inactive: bool = Query(False, description="A historical record (e.g. an old reimbursement) may reference a since-deactivated row and still needs its label to resolve"),
         ) -> list[dict]:
-            stmt = select(model.id, getattr(model, label_field), model.is_active)
+            extra = tuple(options_extra_fields or ())
+            stmt = select(model.id, getattr(model, label_field), model.is_active, *(getattr(model, f) for f in extra))
             if not include_inactive:
                 stmt = stmt.where(model.is_active.is_(True))
             rows = (await db.execute(stmt)).all()
-            return [{"id": row_id, "label": label, "is_active": is_active} for row_id, label, is_active in rows]
+            return [
+                {
+                    "id": row[0],
+                    "label": row[1],
+                    "is_active": row[2],
+                    **{name: row[3 + i] for i, name in enumerate(extra)},
+                }
+                for row in rows
+            ]
 
     @router.get("", response_model=None)
     async def list_rows(

@@ -105,6 +105,17 @@ combined_router.include_router(
         # consumers (exhaustive grep of app/models for `expense_type_id`).
         referenced_by=[(ExpenseClaim, "expense_type_id"), (CompanyExpense, "expense_type_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Expense Approvals' own Expense Type filter (Accountant) — see
+        # masters_lookup.py's `label_field` docstring.
+        label_field="name",
+        # The single opted-in extra column in this app, and it clears the
+        # docstring's bar: the Expense claim form RENDERS claim_type as §2.1's
+        # read-only "Claim Type" field, carried from the selected type, and
+        # offers Company-Paid types only to Super Admin/Accountant — so the
+        # client needs the value per row, which a server-side filter cannot
+        # supply. A two-value enum classifying a category; no person, no
+        # amount. default_bank_account_id and usage_count stay unreachable.
+        options_extra_fields=("claim_type",),
     )
 )
 
@@ -127,6 +138,9 @@ combined_router.include_router(
             (LeaveCarryForwardLine, "leave_type_id"), (LeaveBalanceAdjustment, "leave_type_id"),
         ],
         create_only_fields={"is_active": (bool, True)},
+        # Leave Approvals / Balance Management / Leave Reports all label a raw
+        # leave_type_id and populate a Leave Type filter from this lookup.
+        label_field="name",
     )
 )
 
@@ -143,6 +157,9 @@ _holidays_router = build_lookup_router(
     # the one FK pointing at this table (app/models/employee.py AttendanceRecord).
     referenced_by=[(AttendanceRecord, "holiday_id")],
     create_only_fields={"is_active": (bool, True)},
+    # A holiday's own name only — never holiday_date/financial_year_id/
+    # holiday_type, which is what the real screen is for.
+    label_field="name",
 )
 
 class _HolidayImportRow(BaseModel):
@@ -251,6 +268,13 @@ combined_router.include_router(
             (Employee, "department_id"), (Asset, "department_id"), (Payslip, "department_id"),
             (Designation, "department_id"), (WorkWeekPolicy, "department_id"), (AnnouncementTarget, "department_id"),
         ],
+        # The single widest dropdown fan-in in the app: Employee Directory /
+        # Master Record / Onboarding, Asset Directory / Record / Reports /
+        # Maintenance, Announcements, Payroll Payslips, Expense Approvals and
+        # Leave's four report screens all need a Department picker, and none
+        # of those roles may open Masters → Department (Super-Admin-only,
+        # seed.py:108). See masters_lookup.py's `label_field` docstring.
+        label_field="name",
     )
 )
 
@@ -261,6 +285,9 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Employee, "designation_id"), (WorkWeekPolicy, "designation_id")],
         create_only_fields={"is_active": (bool, True)},
+        # `name` only — never department_id/level_grade, which is the org
+        # structure the standalone screen exists to manage.
+        label_field="name",
     )
 )
 
@@ -314,6 +341,8 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Invoice, "service_category_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Invoice's own Service Category field (invoice.api.ts).
+        label_field="name",
     )
 )
 
@@ -333,6 +362,11 @@ combined_router.include_router(
         # "feature not requested".
         referenced_by=[],
         create_only_fields={"is_active": (bool, True)},
+        # No consumer screen today (nothing references a unit yet — see the
+        # empty `referenced_by` above), but the same contract as its siblings
+        # so the first module that needs a UoM picker does not have to reopen
+        # this file.
+        label_field="name",
     )
 )
 
@@ -343,6 +377,9 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Ticket, "category_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Ticket List / Raise a Ticket, for all five roles (ticket.api.ts's
+        # TICKET_CATEGORY_REF) — the second-widest gap after Financial Year.
+        label_field="name",
     )
 )
 
@@ -353,6 +390,8 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Customer, "status_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Customer Directory/Record's Status column and filter.
+        label_field="name",
     )
 )
 
@@ -363,6 +402,8 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Customer, "source_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Customer Directory/Record's Source column and filter.
+        label_field="name",
     )
 )
 
@@ -382,6 +423,11 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Asset, "category_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Asset Directory / Record / Reports / Maintenance / Requests /
+        # Reclaim and Employee's My Assets all label a raw category_id.
+        # `default_useful_life_years` is deliberately NOT reachable here —
+        # /options selects `name` and nothing else.
+        label_field="name",
     )
 )
 
@@ -392,6 +438,9 @@ combined_router.include_router(
         search_field=["name", "code"],
         referenced_by=[(Employee, "employment_type_id"), (WorkWeekPolicy, "employment_type_id"), (Payslip, "employment_type_id")],
         create_only_fields={"is_active": (bool, True)},
+        # Employee Directory / Master Record / My Profile, Payroll Payslips
+        # and Leave's report filters.
+        label_field="name",
     )
 )
 
@@ -411,5 +460,17 @@ combined_router.include_router(
         # it "used" (app/models/employee.py EmployeeInsuranceEnrollment).
         referenced_by=[(EmployeeInsuranceEnrollment, "insurance_plan_id")],
         create_only_fields={"is_active": (bool, True)},
+        # The ONE sub-master on this factory carrying money columns
+        # (coverage_amount / company_contribution_monthly /
+        # employee_contribution_monthly), so masters_lookup.py's own caveat
+        # about `apply_field_masking` being bypassed matters here more than
+        # anywhere else on this page. Safe by construction and for the same
+        # reason masters_bank_accounts.py's `/options` is: the route selects
+        # `plan_name` and nothing else, so not one of those three figures is
+        # reachable through it. Note this is NOT what Employee → Insurance &
+        # Benefits' enrolment form reads — that one genuinely needs the
+        # contribution figures and keeps using the full list route (which HR,
+        # its only non-Super-Admin caller, already holds `view` on).
+        label_field="plan_name",
     )
 )

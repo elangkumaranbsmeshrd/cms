@@ -427,14 +427,35 @@ export class CompanyExpensesComponent implements OnInit {
     // resolve EVERY row this screen might show, including one referencing a
     // since-deactivated type; is_active is applied only in the picker/filter
     // views below.
-    this.http.get<ExpenseTypeOption[]>(`${environment.apiBaseUrl}/masters/expense-types`).subscribe({
-      next: (rows) => this.expenseTypes.set(rows),
-      error: () => this.expenseTypes.set([]),
-    });
-    this.http.get<TaxHeadOption[]>(`${environment.apiBaseUrl}/masters/taxes`).subscribe({
-      next: (rows) => this.taxHeads.set(rows),
-      error: () => this.taxHeads.set([]),
-    });
+    // /options, not the gated masters.expense_types screen — that screen is
+    // Manager/Super-Admin only (seed.py), so Accountant 404'd here and this
+    // picker was empty for the role that owns this screen. claim_type rides
+    // along deliberately (masters_lookup.py's options_extra_fields): the
+    // read-only Claim Type field renders it, so a server-side filter could
+    // not have supplied it.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean; claim_type: string }[]>(
+        `${environment.apiBaseUrl}/masters/expense-types/options`,
+      )
+      .subscribe({
+        next: (rows) =>
+          this.expenseTypes.set(
+            rows.map((r) => ({ id: r.id, name: r.label, claim_type: r.claim_type, is_active: r.is_active })),
+          ),
+        error: () => this.expenseTypes.set([]),
+      });
+    // /options with scope + in-force window applied SERVER-side: this picker
+    // only renders a head's name, so rate_pct, the cgst/sgst split,
+    // fixed_amount and slab bands stay structurally unreachable here.
+    this.http
+      .get<{ id: string; label: string; is_active: boolean }[]>(
+        `${environment.apiBaseUrl}/masters/taxes/options`,
+        { params: { scope: ['PURCHASE', 'SALES_AND_PURCHASE'], in_force_on: this.today } },
+      )
+      .subscribe({
+        next: (rows) => this.taxHeads.set(rows.map((r) => ({ id: r.id, tax_name: r.label, is_active: r.is_active }))),
+        error: () => this.taxHeads.set([]),
+      });
     // /options, not the gated masters.bank_accounts/payment_modes screens
     // (2026-08-11 RBAC audit fix) — Accountant, this screen's primary role
     // besides Super Admin, no longer holds standalone `view` on either.
@@ -464,7 +485,7 @@ export class CompanyExpensesComponent implements OnInit {
     // Years just falls back to the calendar-only presets (buildDatePresets
     // degrades gracefully on an empty array), same as ListScreenComponent's
     // own 'daterange' filter kind.
-    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years`).subscribe({
+    this.http.get<FinancialYearLike[]>(`${environment.apiBaseUrl}/masters/financial-years/options`).subscribe({
       next: (rows) => this.financialYears.set(rows ?? []),
       error: () => this.financialYears.set([]),
     });
@@ -501,9 +522,7 @@ export class CompanyExpensesComponent implements OnInit {
 
   protected filteredTaxHeads(): readonly TaxHeadOption[] {
     const today = this.today;
-    return this.taxHeads().filter(
-      (t) => t.is_active && (t.scope === 'PURCHASE' || t.scope === 'SALES_AND_PURCHASE') && t.applies_from <= today && (!t.applies_until || t.applies_until >= today),
-    );
+    return this.taxHeads();
   }
 
   protected activeBankAccounts(): readonly BankAccountOption[] {

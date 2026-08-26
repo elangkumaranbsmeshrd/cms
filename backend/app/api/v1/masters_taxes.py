@@ -35,7 +35,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -317,6 +317,51 @@ async def _to_out(db: AsyncSession, head: TaxHead, perms: PermissionSet) -> dict
     out.relief_rules = [ReliefRuleOut.model_validate(r) for r in reliefs]
     out.withholding_directions = [d.direction for d in directions]
     return apply_field_masking(out.model_dump(), perms)
+
+
+@router.get("/options", response_model=None)
+async def list_tax_head_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    include_inactive: bool = Query(False, description="An already-issued invoice may name a since-deactivated head and still needs its label to resolve"),
+    scope: list[str] | None = Query(None, description="Keep only heads in these scopes, e.g. scope=PURCHASE&scope=SALES_AND_PURCHASE"),
+    in_force_on: date | None = Query(None, description="Keep only heads in force on this date (applies_from <= date, and applies_until unset or >= date)"),
+) -> list[dict]:
+    """The `label_field`/`/options` contract masters_lookup.py documents,
+    applied to Tax Heads: `masters.taxes` is Super-Admin-full / Accountant-view
+    and nothing at all for Manager, HR and Employee (seed.py:47), yet Invoice
+    and Purchase Bill both label a line item's `tax_head_id` and offer a "Tax
+    Applied" filter, and Company Profile names its default output tax.
+
+    This is the case where the "no Layer-3-sensitive fields" caveat earns its
+    keep, and it holds for exactly the reason masters_bank_accounts.py's own
+    `/options` holds: `masters.taxes` has by far the largest field manifest in
+    the app (rate_pct, cgst/sgst splits, fixed_amount, declaration_cap, slab
+    bands, relief rules, remittance schedule…), and this route selects
+    `tax_name` and nothing else — so not one of those numbers is reachable
+    through it. A head's NAME is not a secret: it is printed on every invoice
+    the counterparty receives. The arithmetic behind it stays behind the real
+    screen permission, and `POST /masters/taxes/calculate` keeps its own.
+    """
+    stmt = select(TaxHead.id, TaxHead.tax_name, TaxHead.is_active)
+    if not include_inactive:
+        stmt = stmt.where(TaxHead.is_active.is_(True))
+    # `scope` and `in_force_on` FILTER here rather than being returned, and
+    # that distinction is the whole point. Expense's tax picker needs a
+    # narrowed list of NAMES; it never displays a scope or a date window. So
+    # the predicate runs server-side and the payload stays exactly {id, label,
+    # is_active} — the invariant masters_lookup.py's docstring rests on. The
+    # alternative, shipping scope/applies_from/applies_until so the client can
+    # filter, would widen this route's surface for no user-visible gain.
+    if scope:
+        stmt = stmt.where(TaxHead.scope.in_(scope))
+    if in_force_on is not None:
+        stmt = stmt.where(
+            TaxHead.applies_from <= in_force_on,
+            or_(TaxHead.applies_until.is_(None), TaxHead.applies_until >= in_force_on),
+        )
+    rows = (await db.execute(stmt)).all()
+    return [{"id": row_id, "label": tax_name, "is_active": is_active} for row_id, tax_name, is_active in rows]
 
 
 @router.get("", response_model=None)
