@@ -95,7 +95,18 @@ const ENTITY_ROUTE_BASE: Record<string, string> = {
         </div>
       </div>
       <div class="tb-left">
-        <button class="icon-btn" type="button" (click)="ui.sidebarCollapsed.set(!ui.sidebarCollapsed())" title="Toggle sidebar">
+        <!-- The title attribute alone is NOT an accessible name: it's a tooltip that only
+             appears on hover, so an icon-only button reads as just "button" to
+             a screen reader and is unreachable by voice control. aria-label is
+             the name; title stays for the sighted hover hint. -->
+        <button
+          class="icon-btn"
+          type="button"
+          (click)="ui.sidebarCollapsed.set(!ui.sidebarCollapsed())"
+          title="Toggle sidebar"
+          aria-label="Toggle sidebar"
+          [attr.aria-expanded]="!ui.sidebarCollapsed()"
+        >
           <app-icon name="menu" [size]="16" />
         </button>
         <!-- Back + trail live here, once, for every screen in the app. -->
@@ -163,10 +174,23 @@ const ENTITY_ROUTE_BASE: Record<string, string> = {
       </button>
 
       <div style="position: relative;">
-        <button class="icon-btn bell" type="button" (click)="toggleNotifPop()" title="Notifications">
+        <!-- Same fix as the sidebar toggle above. The unread count is part of
+             the name here, not a separate announcement — the badge is a bare
+             number that reads as "5" out of context otherwise. -->
+        <button
+          class="icon-btn bell"
+          type="button"
+          (click)="toggleNotifPop()"
+          title="Notifications"
+          [attr.aria-label]="unreadCount() > 0 ? 'Notifications, ' + unreadCount() + ' unread' : 'Notifications'"
+          [attr.aria-expanded]="notifPopOpen()"
+        >
           <app-icon name="bell" [size]="17" />
           @if (unreadCount() > 0) {
-            <span class="dot">{{ unreadCount() > 99 ? '99+' : unreadCount() }}</span>
+            <!-- aria-hidden: the count is already inside the button's own
+                 aria-label above, so without this it is announced twice, the
+                 second time as a bare number. -->
+            <span class="dot" aria-hidden="true">{{ unreadCount() > 99 ? '99+' : unreadCount() }}</span>
           }
         </button>
         @if (notifPopOpen()) {
@@ -216,7 +240,8 @@ const ENTITY_ROUTE_BASE: Record<string, string> = {
         }
       </div>
 
-      <button class="icon-btn" type="button" (click)="toggleTheme()" title="Toggle theme">
+      <!-- Third icon-only button with the same title-as-only-name defect. -->
+      <button class="icon-btn" type="button" (click)="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
         {{ ui.theme() === 'dark' ? '☀' : '☾' }}
       </button>
 

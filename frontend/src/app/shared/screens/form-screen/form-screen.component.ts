@@ -12,6 +12,12 @@ import { formatDate, humanizeEnum } from '../cell-format';
 import { RefDataService } from '../ref-data.service';
 import { FileUploadService } from '../file-upload.service';
 
+/** Bumped once per FormScreenComponent construction, so every instance gets a
+ * distinct id namespace for its controls. Module-level (not a static) purely
+ * so it can't be reset by anything; it only ever has to be unique within one
+ * loaded page. */
+let formScreenInstanceSeq = 0;
+
 /** The 'form' shape — one component for every screen with no GET-by-id
  * endpoint to back a 'record' route (the 15 simple Masters lookups today).
  * Doubles as create AND edit: no :id route param means create mode
@@ -57,7 +63,14 @@ import { FileUploadService } from '../file-upload.service';
                 </div>
               }
               <div class="field" [class.span-2]="field.span === 2 || field.type === 'textarea'">
-                <label>
+                <!-- [attr.for] is null, not omitted, for the shapes below that
+                     render no labelable control at all (a read-only <div>, the
+                     custom toggle <span>, a checkgroup of several boxes) —
+                     a "for" pointing at a non-labelable element is worse than
+                     none, because a screen reader follows it and finds nothing
+                     to name. Those three get aria-labelledby off labelId()
+                     instead, which is why the <label> always carries an id. -->
+                <label [id]="labelId(field)" [attr.for]="labelTargetId(field)">
                   {{ field.label }}
                   @if (field.required) {
                     <span class="req" aria-hidden="true">*</span>
@@ -87,11 +100,11 @@ import { FileUploadService } from '../file-upload.service';
                     } @else {
                       <span class="cell-sub">No file uploaded.</span>
                     }
-                    <label class="btn sm ghost" [for]="'file-' + field.key" style="cursor: pointer; margin: 0;">
+                    <label class="btn sm ghost" [for]="controlId(field)" style="cursor: pointer; margin: 0;">
                       {{ isFileUploading(field) ? 'Uploading…' : formModel[field.key] ? 'Replace' : 'Upload' }}
                     </label>
                     <input
-                      [id]="'file-' + field.key"
+                      [id]="controlId(field)"
                       type="file"
                       style="display: none;"
                       [disabled]="isFileUploading(field)"
@@ -105,18 +118,43 @@ import { FileUploadService } from '../file-upload.service';
                        wrote the literal text "null" into the model and sent it
                        to the API as a 4-character string instead of clearing
                        the field. -->
-                  <select class="input" [(ngModel)]="formModel[field.key]">
+                  <select class="input" [id]="controlId(field)" [(ngModel)]="formModel[field.key]">
                     <option [ngValue]="null">—</option>
                     @for (opt of selectOptions(field); track opt.id) {
                       <option [ngValue]="opt.id">{{ opt.label }}</option>
                     }
                   </select>
                 } @else if (field.type === 'checkbox') {
-                  <span class="toggle" [class.on]="!!formModel[field.key]" (click)="formModel[field.key] = !formModel[field.key]">
+                  <!-- A <span> can't be a <label for>'s target, can't be tabbed
+                       to, and reports no on/off state — so this control was
+                       completely invisible to a keyboard or a screen reader,
+                       not merely unnamed. role/aria-checked/tabindex give it
+                       the switch semantics its appearance already implies, and
+                       Space/Enter mirror the existing click handler. -->
+                  <span
+                    class="toggle"
+                    role="switch"
+                    tabindex="0"
+                    [id]="controlId(field)"
+                    [attr.aria-checked]="!!formModel[field.key]"
+                    [attr.aria-labelledby]="labelId(field)"
+                    [class.on]="!!formModel[field.key]"
+                    (click)="formModel[field.key] = !formModel[field.key]"
+                    (keydown.enter)="formModel[field.key] = !formModel[field.key]"
+                    (keydown.space)="$event.preventDefault(); formModel[field.key] = !formModel[field.key]"
+                  >
                     <span class="track"></span>
                   </span>
                 } @else if (field.type === 'checkgroup') {
-                  <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px;">
+                  <!-- Each box inside is already named by its own wrapping
+                       <label>; what was missing is the name of the SET, which
+                       is what the field's own <label> holds. -->
+                  <div
+                    role="group"
+                    [id]="controlId(field)"
+                    [attr.aria-labelledby]="labelId(field)"
+                    style="display: flex; flex-wrap: wrap; gap: 10px; padding-top: 4px;"
+                  >
                     @for (opt of selectOptions(field); track opt.id) {
                       <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer;">
                         <input type="checkbox" [checked]="inCheckGroup(field, opt.id)" (change)="toggleCheckGroup(field, opt.id)" />
@@ -125,10 +163,11 @@ import { FileUploadService } from '../file-upload.service';
                     }
                   </div>
                 } @else if (field.type === 'textarea') {
-                  <textarea class="input" rows="3" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
+                  <textarea class="input" rows="3" [id]="controlId(field)" [placeholder]="field.placeholder ?? ''" [(ngModel)]="formModel[field.key]"></textarea>
                 } @else {
                   <input
                     class="input"
+                    [id]="controlId(field)"
                     [type]="inputType(field)"
                     [placeholder]="field.placeholder ?? ''"
                     [(ngModel)]="formModel[field.key]"
@@ -184,20 +223,35 @@ import { FileUploadService } from '../file-upload.service';
                   <tr>
                     @for (col of arr.columns; track col.key) {
                       <td>
+                        <!-- A <th> only names a cell for a SIGHTED reader
+                             scanning the column; the control itself still needs
+                             its own name, and no <label> can be added inside a
+                             grid of repeated rows without colliding ids. -->
                         @if (col.type === 'select') {
-                          <select class="input" [(ngModel)]="item[col.key]">
+                          <select class="input" [attr.aria-label]="col.label" [(ngModel)]="item[col.key]">
                             <option [value]="null">—</option>
                             @for (opt of col.staticOptions ?? []; track opt.value) {
                               <option [value]="opt.value">{{ opt.label }}</option>
                             }
                           </select>
                         } @else if (col.type === 'checkbox') {
-                          <span class="toggle" [class.on]="!!item[col.key]" (click)="item[col.key] = !item[col.key]">
+                          <span
+                            class="toggle"
+                            role="switch"
+                            tabindex="0"
+                            [attr.aria-checked]="!!item[col.key]"
+                            [attr.aria-label]="col.label"
+                            [class.on]="!!item[col.key]"
+                            (click)="item[col.key] = !item[col.key]"
+                            (keydown.enter)="item[col.key] = !item[col.key]"
+                            (keydown.space)="$event.preventDefault(); item[col.key] = !item[col.key]"
+                          >
                             <span class="track"></span>
                           </span>
                         } @else {
                           <input
                             class="input"
+                            [attr.aria-label]="col.label"
                             [type]="col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'"
                             [(ngModel)]="item[col.key]"
                           />
@@ -246,6 +300,13 @@ import { FileUploadService } from '../file-upload.service';
 })
 export class FormScreenComponent<T = any> {
   readonly config = input.required<FormScreenConfig<T>>();
+  /** Per-INSTANCE, not per-field: `field.key` alone is only unique within one
+   * form, and this component is rendered more than once on a single page (a
+   * tabbed record shows a form per tab, all in the DOM together). Two elements
+   * sharing an id makes every `<label for>` on the page resolve to whichever
+   * one the browser happens to find first, which is a subtler failure than
+   * having no label at all. */
+  private readonly instanceId = `fs${++formScreenInstanceSeq}`;
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -286,6 +347,29 @@ export class FormScreenComponent<T = any> {
 
   protected navigate(route: readonly unknown[]): void {
     this.router.navigate(route as any[]);
+  }
+
+  // ---- Label association. `field.key` is already the stable, unique-within-
+  // a-form identifier the template tracks by, so ids stay stable across
+  // re-renders; the instance prefix keeps two forms on one page apart. The
+  // sanitiser is defensive — every key today is a plain snake_case column
+  // name, but an id with a space or a dot in it silently breaks any
+  // querySelector/`for` lookup rather than erroring anywhere visible.
+  protected controlId(field: FieldConfig<T>): string {
+    return `${this.instanceId}-${String(field.key).replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  protected labelId(field: FieldConfig<T>): string {
+    return `${this.controlId(field)}-label`;
+  }
+
+  /** What this field's <label> may legally point `for` at — null for the
+   * shapes that render no labelable control (read-only text, the toggle
+   * <span>, a checkgroup); those are named by aria-labelledby instead. */
+  protected labelTargetId(field: FieldConfig<T>): string | null {
+    if ((field.createOnly && this.isEdit()) || this.isReadOnlyRecord()) return null;
+    if (field.type === 'checkbox' || field.type === 'checkgroup') return null;
+    return this.controlId(field);
   }
 
   /** " (3)" once the array named by countFrom is loaded and non-empty,

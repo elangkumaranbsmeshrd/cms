@@ -21,7 +21,7 @@ from app.models.employee import Employee
 from app.models.leave import LeaveBalance, LeaveRequest
 from app.models.masters import Holiday, LeaveType, SaturdayOverride
 from app.models.platform import User
-from app.models.rbac import Role
+from app.models.rbac import FeatureToggle, Role
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
 from app.rbac.scope import apply_scope
@@ -69,6 +69,108 @@ logger = logging.getLogger(__name__)
 def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     logger.warning("db constraint violation: %s", exc.orig)
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
+
+
+# ================================================== HR CO-APPROVAL (§6.2)
+# "Require HR Co-Approval for Leave Longer Than X Days" (rbac/toggles.py
+# TOGGLE_DEFAULTS, module "leave", OFF by default). Built on the same shape
+# as Expense's own two-step approval (api/v1/expenses.py): the toggle is read
+# LIVE at the moment of the decision — never snapshotted onto the row at
+# apply time — so flipping it takes effect on the very next decision instead
+# of only on requests created afterwards, matching _toggle_enabled in
+# expenses.py / purchase_bills.py / compliance.py / invoices.py.
+HR_CO_APPROVAL_TOGGLE = "Require HR Co-Approval for Leave Longer Than X Days"
+
+# The roles whose own approval already IS the HR signature, so demanding a
+# further co-approval on top of it would be asking the same desk twice:
+# HR itself, and Super Admin — leave_engine.resolve_routing already treats
+# Super Admin as HR's designated stand-in (rules 4/5: "Nobody is in HR:
+# falls back to Super Admin"), which is also what keeps this step from ever
+# stranding a request in an org with no active HR user, the same "narrow to
+# what actually applies, never strand a record with no valid path forward"
+# reasoning expenses.py's _manager_approval_required uses for a claimant
+# with no reporting manager.
+_HR_SIGNATORY_ROLES = ("HR", "SUPER_ADMIN")
+
+
+async def _toggle_enabled(db: AsyncSession, toggle_key: str) -> bool:
+    row = (await db.execute(select(FeatureToggle.enabled).where(FeatureToggle.toggle_key == toggle_key))).scalar_one_or_none()
+    return bool(row)
+
+
+async def _toggle_numeric_value(db: AsyncSession, toggle_key: str) -> Decimal | None:
+    return (await db.execute(select(FeatureToggle.numeric_value).where(FeatureToggle.toggle_key == toggle_key))).scalar_one_or_none()
+
+
+def _awaiting_hr_co_approval(row: LeaveRequest) -> bool:
+    """"First approver has signed, HR co-approval still outstanding" — the
+    intermediate state, expressed entirely in columns that already exist.
+
+    Expense models its equivalent step as a real intermediate STATUS
+    (MGR_APPROVED). Leave cannot: leave_requests.status is CHECK-constrained
+    to ('PENDING','APPROVED','REJECTED','CANCELLED') (migration
+    0003_employee_leave.py, ck_lr_status) and adding a fifth value needs a
+    migration. It does not need one, though — hr_co_approval_required /
+    hr_co_approved_by / hr_co_approved_at have been real columns on this
+    table since that same migration (lines 610-612) and were simply never
+    written to. Still-PENDING + flagged + not yet co-approved is exactly the
+    "Manager decided, HR co-approval still pending" state, and leaving the
+    status at PENDING is also what keeps the request correctly visible in the
+    Approvals queue (which defaults to status=PENDING) while it waits.
+    """
+    return row.status == "PENDING" and bool(row.hr_co_approval_required) and row.hr_co_approved_at is None
+
+
+async def _hr_co_approval_threshold(db: AsyncSession, row: LeaveRequest, approver_role_code: str) -> Decimal | None:
+    """The configured "X Days" when THIS request, approved by THIS approver,
+    needs the extra HR signature — None when it does not, which is always the
+    case while the toggle is off (the default: behaviour then is byte-for-byte
+    what it was before this was built).
+
+    days_requested is whatever leave_engine.calculate_working_days already
+    put on the row at apply time — half-days, weekly offs, the covering Work
+    Week Policy's Saturday rule and Mandatory holidays are all already
+    accounted for there, so nothing is re-counted here. "Longer Than X Days"
+    is read strictly: a request at exactly the threshold is unaffected.
+    """
+    if not await _toggle_enabled(db, HR_CO_APPROVAL_TOGGLE):
+        return None
+    threshold = await _toggle_numeric_value(db, HR_CO_APPROVAL_TOGGLE)
+    # Toggle on but no number configured: nothing to compare against, so no
+    # request can be "longer than X" — same `threshold is not None` guard
+    # expenses.py's own auto-approval threshold check uses rather than
+    # inventing a fallback number nobody chose.
+    if threshold is None:
+        return None
+    if row.days_requested <= threshold:
+        return None
+    if row.hr_co_approved_at is not None:
+        return None  # already co-approved; the step is done, not owed twice
+    if approver_role_code in _HR_SIGNATORY_ROLES:
+        return None  # this approver's own signature IS the HR one
+    return threshold
+
+
+async def _release_pending_balance(db: AsyncSession, row: LeaveRequest, *, approve: bool, user_id: str) -> None:
+    """Moves the request's days out of pending_days once, at the moment the
+    request reaches a terminal status — never at the intermediate
+    co-approval step, where nothing has been granted yet and the days must
+    stay held in pending_days.
+    """
+    balance = (
+        await db.execute(
+            select(LeaveBalance).where(
+                LeaveBalance.employee_id == row.employee_id, LeaveBalance.leave_type_id == row.leave_type_id,
+                LeaveBalance.financial_year_id == row.financial_year_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if balance is None:
+        return
+    balance.pending_days -= row.days_requested
+    if approve:
+        balance.taken_days += row.days_requested
+    balance.updated_by = user_id
 
 
 async def _require_own_employee(db: AsyncSession, current_user: User) -> Employee:
@@ -255,18 +357,13 @@ async def apply_for_leave(
         hr_is_available=hr_is_available, applicant_is_sole_active_hr=applicant_is_sole_hr,
     )
 
-    # QUEUED / NOT BUILT — §6.2 "Require HR Co-Approval for Leave Longer
-    # Than X Days" toggle (rbac/toggles.py TOGGLE_DEFAULTS, module "leave",
-    # OFF by default). LeaveRequest.hr_co_approval_required is a real column
-    # (models/leave.py) and is never set here, so this row always finalizes
-    # on one Manager decision no matter how long the request is or whether
-    # the toggle is ON. Not wired in because the toggle only has an ON/OFF
-    # value — FeatureToggle (models/rbac.py) is boolean (enabled/
-    # default_enabled), with nowhere to store the "X Days" threshold the
-    # spec describes, so `hr_co_approval_required = toggle_on and
-    # days_requested > threshold` can't be written without inventing that
-    # field first. See decide_leave_request below for the matching read-side
-    # gap and the additional schema blocker there.
+    # §6.2's "Require HR Co-Approval for Leave Longer Than X Days" is
+    # deliberately NOT evaluated here. hr_co_approval_required is written by
+    # decide_leave_request, at the moment of the decision, from a live read
+    # of the toggle and its numeric_value — writing it at apply time would
+    # make it a snapshot of the toggle's state on the day the employee
+    # happened to submit, which is neither how any other toggle in this
+    # codebase behaves nor what a Super Admin flipping the switch expects.
     row = LeaveRequest(
         id=str(uuid.uuid4()), employee_id=employee.id, leave_type_id=leave_type.id, financial_year_id=fy.id,
         from_date=body.from_date, to_date=body.to_date, is_half_day=body.is_half_day, half_day_session=body.half_day_session,
@@ -351,6 +448,9 @@ async def list_leave_approvals(
     # addition) is the min side; max is a bonus the convention gives for free.
     pending_days_min: int | None = Query(None, description="Days since applied_at, at least this many"),
     pending_days_max: int | None = Query(None, description="Days since applied_at, at most this many"),
+    awaiting_hr_co_approval: bool | None = Query(
+        None, description="§6.2: true = has its first approval and still needs the HR co-approval signature"
+    ),
     search: str | None = Query(None, description="Matches Employee Name, Reason"),
     format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
 ) -> list[LeaveRequestOut] | Response:
@@ -392,6 +492,12 @@ async def list_leave_approvals(
     if pending_days_max is not None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=pending_days_max)
         stmt = stmt.where(LeaveRequest.applied_at >= cutoff)
+    if awaiting_hr_co_approval is not None:
+        # The SQL form of _awaiting_hr_co_approval() — how HR isolates the
+        # co-approval queue from ordinary still-undecided requests, both of
+        # which are status=PENDING.
+        awaiting = (LeaveRequest.hr_co_approval_required.is_(True)) & (LeaveRequest.hr_co_approved_at.is_(None)) & (LeaveRequest.status == "PENDING")
+        stmt = stmt.where(awaiting) if awaiting_hr_co_approval else stmt.where(~awaiting)
     if search:
         needle = f"%{search}%"
         stmt = stmt.where(or_(Employee.first_name.ilike(needle), Employee.last_name.ilike(needle), LeaveRequest.reason.ilike(needle)))
@@ -402,7 +508,8 @@ async def list_leave_approvals(
         filters_applied = {
             "status": effective_status, "employee_id": employee_id, "leave_type_id": leave_type_id, "routed_to": routed_to,
             "applied_from": applied_from, "applied_to": applied_to, "date_from": date_from, "date_to": date_to,
-            "days_min": days_min, "days_max": days_max, "pending_days_min": pending_days_min, "pending_days_max": pending_days_max, "search": search,
+            "days_min": days_min, "days_max": days_max, "pending_days_min": pending_days_min, "pending_days_max": pending_days_max,
+            "awaiting_hr_co_approval": awaiting_hr_co_approval, "search": search,
         }
         return await list_export.build_export(format, db, current_user, "Leave Approvals", _LIST_COLUMNS, export_rows, filters_applied)
 
@@ -430,35 +537,79 @@ async def decide_leave_request(
     if not body.approve and not (body.decision_reason and body.decision_reason.strip()):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A reason is required to reject a leave request")
 
-    balance = (
-        await db.execute(
-            select(LeaveBalance).where(LeaveBalance.employee_id == row.employee_id, LeaveBalance.leave_type_id == row.leave_type_id, LeaveBalance.financial_year_id == row.financial_year_id)
-        )
-    ).scalar_one_or_none()
-    if balance is not None:
-        balance.pending_days -= row.days_requested
-        if body.approve:
-            balance.taken_days += row.days_requested
-        balance.updated_by = current_user.id
+    employee = await db.get(Employee, row.employee_id)
+    caller_is_hr_signatory = perms.role_code in _HR_SIGNATORY_ROLES
 
-    # QUEUED / NOT BUILT — see apply_for_leave's comment on
-    # hr_co_approval_required for the toggle this skips. Even with that flag
-    # never set today, this always treats a single decision (Manager or HR,
-    # whoever routing sent it to) as final — there is no check here that
-    # would hold a co-approval-required request open for the second
-    # signature. Wiring the check alone wouldn't be enough even once the
-    # threshold-days field exists: leave_requests.status is CHECK-constrained
-    # to ('PENDING','APPROVED','REJECTED','CANCELLED') (migration
-    # 0003_employee_leave.py, ck_lr_status) with no "Manager decided, HR
-    # co-approval still pending" state, so this needs a migration, not just
-    # an if-branch.
+    # §6.2: once the first approver has signed, the request belongs to HR.
+    # Its status is still PENDING (see _awaiting_hr_co_approval on why), which
+    # without this check would let the same Manager decide it a second time
+    # and silently overwrite their own signature.
+    if _awaiting_hr_co_approval(row) and not caller_is_hr_signatory:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="This request already has its first approval and is waiting on HR co-approval",
+        )
+
+    threshold = await _hr_co_approval_threshold(db, row, perms.role_code) if body.approve else None
+    if threshold is not None:
+        # ---- FIRST signature only: hold the request open for HR ----
+        # The balance is deliberately untouched: nothing has been granted, so
+        # the days stay held in pending_days rather than moving to taken_days.
+        if employee is not None and employee.user_id == current_user.id:
+            # The DB's own trg_leave_requests_block_self_approval (migration
+            # 0003) only fires when status actually CHANGES, and this step
+            # leaves it at PENDING — so the invariant it enforces has to be
+            # restated here rather than relied on from the trigger.
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="A person may not approve their own leave request")
+        row.hr_co_approval_required = True
+        row.actioned_by = current_user.id
+        row.actioned_at = datetime.now(timezone.utc)
+        row.decision_reason = body.decision_reason
+        # It is genuinely waiting on HR now, so the queue should say so —
+        # routed_to_role is CHECK-constrained to REPORTING_MANAGER/HR/
+        # SUPER_ADMIN (ck_lr_routed_role) and 'HR' is exactly this state.
+        # Without this the second approver would have no way to find it.
+        row.routed_to_role = "HR"
+        row.routed_to_user_id = None
+        row.routing_reason = (
+            f"{row.routing_reason} | First approval given; {row.days_requested} days exceeds the "
+            f"{threshold}-day HR co-approval threshold, so HR must co-approve before it is granted"
+        )
+        row.updated_by = current_user.id
+        if employee is not None:
+            notify(
+                db, recipient_user_id=employee.user_id, notification_type="LEAVE", actor_user_id=current_user.id,
+                title="Leave request awaiting HR co-approval",
+                body=f"Your leave request for {row.from_date} to {row.to_date} was approved and now needs HR co-approval.",
+                source_module="leave", source_record_id=row.id,
+            )
+        try:
+            await db.commit()
+        except DBAPIError as exc:
+            await db.rollback()
+            raise _as_client_error(exc, "Rejected by a database constraint") from exc
+        await db.refresh(row)
+        return row
+
+    # ---- terminal decision — unchanged from before this feature existed
+    # whenever the toggle is off, which is the default ----
+    await _release_pending_balance(db, row, approve=body.approve, user_id=current_user.id)
+
+    if body.approve and _awaiting_hr_co_approval(row):
+        # HR (or Super Admin) supplying the outstanding co-signature through
+        # the plain decide endpoint — identical effect to POST
+        # .../hr-co-approve below. actioned_by/actioned_at are deliberately
+        # left pointing at the FIRST approver: the co-signature has its own
+        # two columns, and overwriting would erase who actually made the call.
+        row.hr_co_approved_by = current_user.id
+        row.hr_co_approved_at = datetime.now(timezone.utc)
+    else:
+        row.actioned_by = current_user.id
+        row.actioned_at = datetime.now(timezone.utc)
     row.status = "APPROVED" if body.approve else "REJECTED"
-    row.actioned_by = current_user.id
-    row.actioned_at = datetime.now(timezone.utc)
     row.decision_reason = body.decision_reason
     row.updated_by = current_user.id
 
-    employee = await db.get(Employee, row.employee_id)
     notify(
         db, recipient_user_id=employee.user_id, notification_type="LEAVE", actor_user_id=current_user.id,
         title=f"Leave request {row.status.lower()}",
@@ -478,6 +629,77 @@ async def decide_leave_request(
         {"first_name": employee.first_name, "start_date": str(row.from_date), "end_date": str(row.to_date)},
         related_record_type="leave_request", related_record_id=row.id,
     )
+
+    return row
+
+
+@router.post("/approvals/{request_id}/hr-co-approve", response_model=LeaveRequestOut)
+async def hr_co_approve_leave_request(
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(APPROVALS, action="approve")),
+) -> LeaveRequest:
+    """§6.2 "Require HR Co-Approval for Leave Longer Than X Days" — the
+    second signature itself, the counterpart of expenses.py's
+    manager_approve_expense_claim (there the EXTRA step comes first and
+    Accountant closes it; here the normal approver goes first and HR closes
+    it). decide() with approve=true does exactly the same thing for an HR/
+    Super Admin caller — this exists so the Approvals screen has an
+    unambiguous "Co-approve" action to call, and so the intent is recorded
+    as a co-approval rather than as an ordinary decision.
+
+    NOTE it deliberately does NOT 404 when the toggle is off, unlike
+    manager_approve_expense_claim's own re-check. A request that already
+    reached this state must stay completable even if Super Admin flips the
+    toggle off while it sits in the queue — otherwise turning a feature off
+    would strand live records. The toggle still fully controls whether any
+    NEW request can ever enter this state (_hr_co_approval_threshold, read
+    live in decide()), which is what "off means off" has to mean here.
+    """
+    if perms.role_code not in _HR_SIGNATORY_ROLES:
+        # leave.approvals' registered actions are ("approve",) only
+        # (rbac/registry/screens.py), so require_screen cannot express "HR
+        # only" for this route on its own — restated here, the same
+        # server-side role check expenses.py's create_expense_claim uses for
+        # its Company-Paid gate. The API is the authority, not the frontend.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Only HR or Super Admin can give the HR co-approval")
+    row = await db.get(LeaveRequest, request_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not _awaiting_hr_co_approval(row):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This request is not waiting on an HR co-approval")
+
+    await _release_pending_balance(db, row, approve=True, user_id=current_user.id)
+    row.hr_co_approved_by = current_user.id
+    row.hr_co_approved_at = datetime.now(timezone.utc)
+    row.status = "APPROVED"
+    row.updated_by = current_user.id
+    # actioned_by/actioned_at stay pointed at the first approver — same
+    # reasoning as decide()'s own co-approval branch.
+
+    employee = await db.get(Employee, row.employee_id)
+    if employee is not None:
+        notify(
+            db, recipient_user_id=employee.user_id, notification_type="LEAVE", actor_user_id=current_user.id,
+            title="Leave request approved",
+            body=f"Your leave request for {row.from_date} to {row.to_date} was approved after HR co-approval.",
+            source_module="leave", source_record_id=row.id,
+        )
+
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(exc, "A person may not approve their own leave request") from exc
+    await db.refresh(row)
+
+    if employee is not None:
+        await email_transport.send_templated_email(
+            db, "leave_approved", employee.email,
+            {"first_name": employee.first_name, "start_date": str(row.from_date), "end_date": str(row.to_date)},
+            related_record_type="leave_request", related_record_id=row.id,
+        )
 
     return row
 

@@ -660,7 +660,31 @@ async def seed() -> None:
                             )
                         )
                     ).scalar_one_or_none()
-                    if not existing:
+                    if existing:
+                        # Same insert-only flaw Stage 15 fixed for FeatureToggle
+                        # above: this branch used to `pass` entirely, so a row
+                        # whose `allowed` had drifted away from the canonical
+                        # grant could never be repaired by re-seeding. That is
+                        # not hypothetical — a PUT /rbac/matrix save (or any
+                        # hand-edit) flipping one of these to allowed=0 left the
+                        # role permanently denied an action SCREEN_ACTION_PERMISSIONS
+                        # says it holds, because resolve_permission only ever
+                        # reads `allowed.is_(True)` rows (app/rbac/resolver.py) —
+                        # a false row is indistinguishable from no row at all.
+                        #
+                        # `allowed` IS the code-declared field here, exactly like
+                        # RolePermission.mode / RolePermissionField.mode in the
+                        # loops either side of this one, which have always been
+                        # reset on re-seed: SCREEN_ACTION_PERMISSIONS listing a
+                        # role under an action_key IS the statement "this role
+                        # holds this action", so restoring True is restoring the
+                        # canonical grant, not overwriting an operator's intent.
+                        # Only rows the code itself declares are touched — a row
+                        # for a role NOT in `allowed_roles` is never visited by
+                        # this loop, so operator-added grants and denies outside
+                        # the canonical set survive a reseed untouched.
+                        existing.allowed = True
+                    else:
                         db.add(
                             RolePermissionAction(
                                 id=str(uuid.uuid4()),
@@ -685,6 +709,19 @@ async def seed() -> None:
                         )
                     ).scalar_one_or_none()
                     if existing:
+                        # `mode` is the code-declared field (SCREEN_FIELD_PERMISSIONS
+                        # states show/mask/hide per role) and has always been
+                        # reset here, so a drifted L3 row already self-repairs.
+                        #
+                        # `mask_reason` is deliberately NOT force-reset — and
+                        # deliberately not set to None either. Unlike `mode` it
+                        # has no code-declared counterpart at all:
+                        # SCREEN_FIELD_PERMISSIONS carries only the mode string,
+                        # so there is no canonical value for a reseed to restore.
+                        # Blanking it would be a pure data loss on the same
+                        # reasoning Stage 15 used to leave FeatureToggle.enabled
+                        # alone — a reseed must only correct fields the code
+                        # actually owns, never erase state it never declared.
                         existing.mode = mode
                     else:
                         db.add(

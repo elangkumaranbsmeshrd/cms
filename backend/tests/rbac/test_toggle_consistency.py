@@ -5,7 +5,7 @@ app/rbac/toggles.py's own three structures — TOGGLE_DEFAULTS,
 ACTION_TOGGLE_GATES, MODE_TOGGLE_GATES — for internal consistency with each
 other or with the SCREENS registry.
 
-Two real bugs were found by hand in exactly this area during a manual audit:
+Three real bugs were found by hand in exactly this area during a manual audit:
   1. A dead toggle key: an ACTION_TOGGLE_GATES/MODE_TOGGLE_GATES entry
      referencing a screen_key no longer in the SCREENS registry (or an
      action_key never declared on that screen's own ScreenDef.actions).
@@ -14,6 +14,11 @@ Two real bugs were found by hand in exactly this area during a manual audit:
      correcting in code (TOGGLE_DEFAULTS) never reached the DB row — while
      the live `enabled` value (Super Admin's own runtime state) must never
      be touched by a reseed either way.
+  3. The same insert-only flaw in the RolePermissionAction loop, found live:
+     a PUT /rbac/matrix save wrote allowed=0 onto rows SCREEN_ACTION_PERMISSIONS
+     declares as granted, and re-seeding could never repair them — the role
+     stayed permanently denied an action the code says it holds, because
+     resolve_permission only reads `allowed.is_(True)` rows.
 
 These tests make that whole class of bug catch itself automatically. None of
 them hardcode len(TOGGLE_DEFAULTS) or any other toggle count — that number
@@ -40,7 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import app.seed as seed_module
 from app.core.db import Base
-from app.models.rbac import FeatureToggle
+from app.models.rbac import FeatureToggle, Role, RolePermissionAction, RolePermissionField, Screen
 from app.rbac.registry.screens import SCREENS
 from app.rbac.resolver import VISIBLE_MODES
 from app.rbac.toggles import ACTION_TOGGLE_GATES, MODE_TOGGLE_GATES, TOGGLE_DEFAULTS
@@ -191,4 +196,111 @@ async def test_seed_toggle_upsert_corrects_drifted_module_key_and_default_withou
     assert row.enabled is True, (
         "seed() must never reset a toggle's live `enabled` value back to the code's own default — that's "
         "Super Admin's own runtime state (seed.py's own comment on this branch)"
+    )
+
+
+# A value no seed run could ever produce, so finding it still there after a
+# reseed proves the reseed left the column alone rather than coincidentally
+# rewriting it to the same thing.
+UNDECLARED_MASK_REASON = "set by an operator, never by the code"
+
+
+async def test_seed_permission_upsert_corrects_drifted_grant_without_erasing_undeclared_state(monkeypatch):
+    """Regression test for bug #3 in this module's docstring — the same
+    insert-only flaw as the Stage 15 FeatureToggle one, in the two permission
+    loops of app/seed.py ("for screen_key, per_action in
+    SCREEN_ACTION_PERMISSIONS" / "... SCREEN_FIELD_PERMISSIONS").
+
+    RolePermissionAction.allowed was the live case: a PUT /rbac/matrix save
+    wrote allowed=0 onto rows SCREEN_ACTION_PERMISSIONS declares as granted,
+    and because that loop was `if not existing: db.add(...)` with no else,
+    re-seeding could never repair them. resolve_permission only ever reads
+    `allowed.is_(True)` rows, so a False row is indistinguishable from no row:
+    the role stayed permanently denied an action the code says it holds.
+
+    RolePermissionField.mode has always been reset here, so it is asserted as
+    a guard against that regressing. Its `mask_reason` sibling must NOT be —
+    SCREEN_FIELD_PERMISSIONS carries only the mode string, so there is no
+    code-declared value for a reseed to restore, exactly the reasoning that
+    keeps Stage 15 from resetting FeatureToggle.enabled.
+
+    Same monkeypatched throwaway-engine setup as the toggle test above, and
+    for the same reason. Unlike that test the drifted row can't be planted
+    before the first seed() — a permission row needs the role_id/screen_id
+    seed() itself generates — so this runs the real seed path twice, which
+    also exercises its idempotency.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    action_screen_key, per_action = next(iter(seed_module.SCREEN_ACTION_PERMISSIONS.items()))
+    action_key, granted_roles = next(iter(per_action.items()))
+    action_role_code = granted_roles[0]
+
+    field_screen_key, per_field = next(iter(seed_module.SCREEN_FIELD_PERMISSIONS.items()))
+    field_key, per_field_role = next(iter(per_field.items()))
+    field_role_code, code_field_mode = next(iter(per_field_role.items()))
+    drifted_field_mode = "show" if code_field_mode != "show" else "hide"
+
+    monkeypatch.setattr(seed_module, "AsyncSessionLocal", session_factory)
+    try:
+        await seed_module.seed()
+
+        async with session_factory() as db:
+            action_row = (
+                await db.execute(
+                    select(RolePermissionAction)
+                    .join(Role, Role.id == RolePermissionAction.role_id)
+                    .join(Screen, Screen.id == RolePermissionAction.screen_id)
+                    .where(
+                        Role.code == action_role_code,
+                        Screen.screen_key == action_screen_key,
+                        RolePermissionAction.action_key == action_key,
+                    )
+                )
+            ).scalar_one()
+            assert action_row.allowed is True, "seed() should have granted this action on the first run"
+            action_row.allowed = False  # exactly what the live PUT /rbac/matrix save wrote
+
+            field_row = (
+                await db.execute(
+                    select(RolePermissionField)
+                    .join(Role, Role.id == RolePermissionField.role_id)
+                    .join(Screen, Screen.id == RolePermissionField.screen_id)
+                    .where(
+                        Role.code == field_role_code,
+                        Screen.screen_key == field_screen_key,
+                        RolePermissionField.field_key == field_key,
+                    )
+                )
+            ).scalar_one()
+            field_row.mode = drifted_field_mode  # deliberately wrong vs. SCREEN_FIELD_PERMISSIONS
+            field_row.mask_reason = UNDECLARED_MASK_REASON
+            await db.commit()
+
+        await seed_module.seed()
+
+        async with session_factory() as db:
+            repaired_action = (
+                await db.execute(select(RolePermissionAction).where(RolePermissionAction.id == action_row.id))
+            ).scalar_one()
+            repaired_field = (
+                await db.execute(select(RolePermissionField).where(RolePermissionField.id == field_row.id))
+            ).scalar_one()
+    finally:
+        await engine.dispose()
+
+    assert repaired_action.allowed is True, (
+        f"seed() did not repair a drifted grant: ({action_screen_key!r}, {action_key!r}, {action_role_code!r}) is "
+        "declared in SCREEN_ACTION_PERMISSIONS but its row is still allowed=False after a reseed — the "
+        "RolePermissionAction upsert fix may have regressed back to insert-only"
+    )
+    assert repaired_field.mode == code_field_mode, (
+        f"seed() did not correct a drifted field mode: expected {code_field_mode!r}, got {repaired_field.mode!r}"
+    )
+    assert repaired_field.mask_reason == UNDECLARED_MASK_REASON, (
+        "seed() must never blank a RolePermissionField.mask_reason — SCREEN_FIELD_PERMISSIONS declares no value "
+        "for it, so there is nothing canonical to restore and a reseed would just be losing operator data"
     )

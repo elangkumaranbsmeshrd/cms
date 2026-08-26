@@ -254,6 +254,13 @@ TOGGLE_DEFAULTS: list[tuple[str, str, bool]] = [
     ("Allow Staff to Create New Tickets", "ticket", False),
     ("Require Satisfaction Rating on Close", "ticket", False),
     ("Allow Manager to Adjust Team Leave Balance", "leave", False),
+    # Leave §6.2. Not a resolver-level gate — like Expense's own
+    # threshold/receipt toggles it is business logic inside the router, read
+    # live at decision time by api/v1/leave_requests.py's
+    # _hr_co_approval_threshold(). It carries a companion number (the "X
+    # Days") in FeatureToggle.numeric_value, the same column Expense's "Set
+    # an Auto-Approval Threshold" introduced; with no number configured the
+    # toggle has nothing to compare against and stays inert.
     ("Require HR Co-Approval for Leave Longer Than X Days", "leave", False),
     ("Allow Manager to Run Payroll", "payroll", False),
     ("Allow HR to Add Ad-hoc Payslip Adjustments", "payroll", False),

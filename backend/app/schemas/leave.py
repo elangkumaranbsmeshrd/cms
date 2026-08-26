@@ -8,7 +8,7 @@ calculation are built on.
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 # ================================================================ ATTENDANCE
@@ -94,6 +94,20 @@ class LeaveRequestOut(BaseModel):
     hr_co_approved_by: str | None
     hr_co_approved_at: datetime | None
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field
+    @property
+    def awaiting_hr_co_approval(self) -> bool:
+        """Leave §6.2 — "the first approver has signed, HR's co-approval is
+        still outstanding". Derived here rather than stored, because it is
+        exactly the three columns above read together (the same predicate
+        api/v1/leave_requests.py's own _awaiting_hr_co_approval applies) and
+        a fourth column holding a value the other three already determine
+        would just be one more thing that can drift out of agreement with
+        them. Always false while the toggle is off, since nothing ever sets
+        hr_co_approval_required in that case.
+        """
+        return self.status == "PENDING" and self.hr_co_approval_required and self.hr_co_approved_at is None
 
 
 class LeaveDecisionRequest(BaseModel):

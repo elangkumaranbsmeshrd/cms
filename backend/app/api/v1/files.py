@@ -3,15 +3,19 @@
 Phase 1, with nothing able to create or serve one until now (confirmed
 absent by the Phase 6 research pass — zero `UploadFile` usage anywhere).
 
-Authorization model: any authenticated user may upload (creates an inert
-row nobody can reach without being handed its id) and download BY ID. This
-deliberately mirrors how every consumer already works — a Ticket entry's
-`attachment_stored_file_id`, an Asset's `photo_stored_file_id`, a Company
-Profile's `logo_file_id` are all only ever discoverable through their own
-already-screen-gated parent endpoint; downloading isn't more sensitive than
-the parent record's other fields the caller can already see. There is no
-per-purpose ACL on the file itself, same as this codebase has never had one
-on any `_id` foreign key value in a response body.
+Authorization model: any authenticated user may upload (creates an inert row
+nobody can reach without being handed its id). DOWNLOAD is authorized
+per-file by app/services/file_access.py.
+
+That download check replaces this module's original bet, which is preserved
+here because it is the exact thing that was wrong: it argued that a file id
+"is only ever discoverable through its own already-screen-gated parent
+endpoint", so authentication alone was sufficient. Nothing enforced that, and
+it failed against any id that escaped by another route — a plain Employee
+holding a payslip's `pdf_file_id` downloaded another employee's salary
+document with a 200. Ownership is now resolved through the FK columns that
+already point at `stored_files.id`, and the caller must be able to reach one
+of the owning records; see file_access.py for the full rule table.
 """
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -23,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.models.platform import StoredFile, User
-from app.services import file_storage
+from app.services import file_access, file_storage
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -144,6 +148,7 @@ async def download_file(
     row = await db.get(StoredFile, file_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    await file_access.assert_can_download(db, current_user, row)
     content = file_storage.read_bytes(row)
     return Response(
         content=content, media_type=row.mime_type,
