@@ -2,7 +2,13 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { test, expect, login, authenticate, ROLES } from '../fixtures/auth';
-import { watchForProblems, summarise, findForbiddenText, findPlaceholder } from '../fixtures/console-guard';
+import {
+  watchForProblems,
+  summarise,
+  findForbiddenText,
+  findPlaceholder,
+  waitForQuiet,
+} from '../fixtures/console-guard';
 
 /**
  * §4 of E2E-HARDENING-PROMPT.md — the highest-value test in the suite.
@@ -86,6 +92,11 @@ test.describe('every screen loads, for every role that can open it', () => {
             .first()
             .waitFor({ state: 'visible', timeout: 20_000 })
             .catch(() => issues.push('nothing rendered within 20s (indefinite spinner or blank page)'));
+
+          // Let this screen's own requests finish before judging it. Without
+          // this, a slow response lands during the NEXT screen's listener
+          // window and blames an innocent screen.
+          await waitForQuiet(problems);
 
           const body = (await page.locator('body').innerText().catch(() => '')) || '';
 

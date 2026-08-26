@@ -11,6 +11,12 @@ export interface PageProblems {
   consoleErrors: string[];
   pageErrors: string[];
   failedRequests: string[];
+  /**
+   * When the page last did anything network-ish. Used to wait for a screen to
+   * go quiet BEFORE moving on, so a slow response is blamed on the screen that
+   * actually issued it rather than on whichever screen is walked next.
+   */
+  lastActivityAt: number;
 }
 
 /**
@@ -29,7 +35,16 @@ const IGNORED_CONSOLE = [
 const IGNORED_REQUESTS = [/favicon\.ico/i, /\.map$/i];
 
 export function watchForProblems(page: Page): PageProblems {
-  const problems: PageProblems = { consoleErrors: [], pageErrors: [], failedRequests: [] };
+  const problems: PageProblems = {
+    consoleErrors: [],
+    pageErrors: [],
+    failedRequests: [],
+    lastActivityAt: Date.now(),
+  };
+
+  page.on('request', () => {
+    problems.lastActivityAt = Date.now();
+  });
 
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
@@ -45,6 +60,7 @@ export function watchForProblems(page: Page): PageProblems {
   });
 
   page.on('response', (res: Response) => {
+    problems.lastActivityAt = Date.now();
     const status = res.status();
     if (status < 400) return;
     const url = res.url();
@@ -99,4 +115,27 @@ export function summarise(problems: PageProblems): string {
   if (problems.consoleErrors.length) parts.push(`console: ${problems.consoleErrors.join(' | ')}`);
   if (problems.failedRequests.length) parts.push(`network: ${problems.failedRequests.join(' | ')}`);
   return parts.join('\n');
+}
+
+/**
+ * Wait until the page has issued no request and received no response for
+ * `quietMs`, capped at `maxMs`.
+ *
+ * Not networkidle: this app's dev server holds an HMR websocket open, so
+ * Playwright's networkidle can never settle. Without this, a response that
+ * arrives after we have moved to the next screen is recorded against the wrong
+ * screen — which made per-role failure counts wobble between identical runs and
+ * pointed at innocent screens.
+ */
+export async function waitForQuiet(
+  problems: PageProblems,
+  { quietMs = 700, maxMs = 8000 }: { quietMs?: number; maxMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  for (;;) {
+    const idleFor = Date.now() - problems.lastActivityAt;
+    if (idleFor >= quietMs) return;
+    if (Date.now() >= deadline) return;
+    await new Promise((r) => setTimeout(r, Math.min(quietMs - idleFor, 150)));
+  }
 }
