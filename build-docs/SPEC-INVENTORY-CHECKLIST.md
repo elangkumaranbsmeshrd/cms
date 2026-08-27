@@ -55,19 +55,24 @@ bug, not a placeholder.
 
 ---
 
-## Already-confirmed defects — expect these, don't re-discover them
+## Previously-confirmed defects — ALL FIXED, do not re-discover them
 
-| # | Defect | Where |
+Every item below was verified against live code and the running database, then fixed. They are kept
+here so a future pass recognises them rather than re-reporting them. **Do not treat this table as a
+to-do list.**
+
+| # | Defect | Outcome |
 |---|---|---|
-| 1 | **BLOCKER** — no employee record linked to any login, so every self-service screen is empty for all 5 roles | `backend/app/seed.py` never sets `Employee.user_id` |
-| 2 | Raw UUIDs shown instead of names | `ref-data.service.ts:45` `?? id` + orphaned FKs |
-| 3 | Three filters all labelled "Anyone" | `emp.directory.config.ts:90,93,94` |
-| 4 | Role switcher ships to production | `topbar.component.ts:261` |
-| 5 | Unstyled components — CSS classes used but never defined | `.formbar` `.row-actions` `.field-lock` `.soon` |
-| 6 | ~60 Masters gaps | `MASTERS-COMPLETION-PROMPT.md` |
+| 1 | No employee record linked to any login, so every self-service screen was dead | **Fixed.** `seed.py` now creates and links an Employee per demo user. All 5 roles resolve their own record and get 200 from dashboard, leave, expenses and payslips. |
+| 2 | Raw UUIDs shown instead of names | **Fixed.** `ref-data.service.ts` renders `Unknown` rather than the id. The underlying cause — `wipe_and_reseed_masters.py` disabling `FOREIGN_KEY_CHECKS` and never repairing dependents, leaving 1,610 orphaned rows — now has `scripts/orphan_audit.py`, wired into that script. |
+| 3 | Three filters all labelled "Anyone" | **Fixed**, and swept: 19 screens had same-screen `allLabel` collisions, now none. |
+| 4 | Role switcher "ships to production" | **Phantom, as stated.** It is spec-approved (A112) and cannot escalate — the backend honours `X-Preview-Role` only for a caller whose JWT role is genuinely Super Admin, and it can only narrow. What WAS missing is A112's own condition, a persistent preview banner; that is now built. |
+| 5 | CSS classes used but never defined | **Fixed.** Nine were genuinely undefined, including `.formbar`, `.hint` and `.clear`. `.soon` was deliberately not ported — the house idiom for that is `badge-s b-outline`. |
+| 6 | ~60 Masters gaps | **Mostly closed** by the earlier Masters remediation; verify individually before acting. |
 
-**Fix #1 first.** Until logins have employee records, ~10 self-service screens are blank for every role
-and cannot be inspected at all.
+Also closed since this checklist was written: the `must_change_password` flow had no frontend at all,
+locking 105 of 117 users out of the product with no recovery path, and an axe sweep went from 139
+critical/serious accessibility violations to 0 across all 69 screens.
 
 ---
 
