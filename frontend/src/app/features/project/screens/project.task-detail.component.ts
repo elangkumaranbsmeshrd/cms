@@ -212,7 +212,12 @@ interface SprintOption {
           @if (canWrite()) {
             <div class="card-foot" style="justify-content: flex-start; gap: 8px;">
               <input class="input" type="text" style="flex: 1;" placeholder="Add a subtask…" [(ngModel)]="newSubtaskText" />
-              <button class="btn primary" type="button" [disabled]="addingSubtask() || !newSubtaskText.trim()" (click)="addSubtask()">Add</button>
+              <!-- §2.4 names this button "+ Add Sub-task", both in the
+                   Sub-tasks field row and in the screen's Buttons list. It
+                   read "Add" — an accessible name that says nothing on a page
+                   already carrying Save/Cancel/Delete/Post, so the spec's
+                   caption is also the clearer one. -->
+              <button class="btn primary" type="button" [disabled]="addingSubtask() || !newSubtaskText.trim()" (click)="addSubtask()">Add Sub-task</button>
             </div>
           }
         </div>

@@ -797,6 +797,8 @@ async def world(db_session) -> dict[str, str]:
         "actor_id": actor.id, "employee_id": employee.id, "financial_year_id": fy.id,
         "tax_head_id": tax_head.id, "withholding_tax_head_id": tds_payable.id,
         "customer_name": customer.company_name,
+        # Comp Hours' preview endpoint asks which shortfall is being made up.
+        "attendance_record_id": attendance.id,
     }
 
 
@@ -820,6 +822,13 @@ async def swept(world, client) -> dict[str, tuple[int, object]]:
         "period_year": str(PERIOD_YEAR),
         "stage": "QUALIFYING",  # opportunity_engine's own vocabulary
         "q": world["customer_name"][:8],
+        # GET /comp-hours/preview answers §2.6's Day Type / Window Check /
+        # Monthly Cap Check before submit, so it needs the shortfall it is
+        # compensating and the date being proposed. A future date keeps it
+        # inside the make-up window rather than tripping the window check,
+        # which would make this a 4xx instead of the happy path being swept.
+        "shortfall_attendance_record_id": world["attendance_record_id"],
+        "make_up_date": (TODAY + timedelta(days=3)).isoformat(),
     }
     unknown = {
         name for path in GET_PATHS for name in _required_params(path) if name not in values

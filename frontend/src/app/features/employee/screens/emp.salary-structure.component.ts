@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 
 import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
-import { formatMoney } from '../../../shared/screens/cell-format';
+import { formatMoney, humanizeEnum } from '../../../shared/screens/cell-format';
 
 const SCREEN = 'employee.salary_structure';
 
@@ -76,11 +76,11 @@ interface SalaryStructureRow {
             <div class="grid g-2" style="margin-bottom: 18px;">
               <div><div class="cell-sub">Basic Salary (Monthly)</div><div>{{ formatMoney(c.basic_salary_monthly) }}</div></div>
               <div><div class="cell-sub">Dearness Allowance (Monthly)</div><div>{{ formatMoney(c.dearness_allowance_monthly) }}</div></div>
-              <div><div class="cell-sub">HRA (Monthly)</div><div>{{ formatMoney(c.hra_monthly) }}</div></div>
-              <div><div class="cell-sub">LTA</div><div>{{ formatMoney(c.lta_amount) }} ({{ c.lta_payout_basis }})</div></div>
+              <div><div class="cell-sub">HRA — House Rent Allowance (Monthly)</div><div>{{ formatMoney(c.hra_monthly) }}</div></div>
+              <div><div class="cell-sub">Leave Travel Allowance — LTA</div><div>{{ formatMoney(c.lta_amount) }} ({{ humanizeEnum(c.lta_payout_basis) }})</div></div>
               <div><div class="cell-sub">Special Allowance (Monthly)</div><div>{{ formatMoney(c.special_allowance_monthly) }}</div></div>
               <div><div class="cell-sub">Other Earnings (Monthly)</div><div>{{ formatMoney(c.other_earnings_monthly) }}</div></div>
-              <div><div class="cell-sub">Variable / Performance Pay</div><div>{{ formatMoney(c.variable_pay_amount) }} ({{ c.variable_pay_frequency }})</div></div>
+              <div><div class="cell-sub">Variable / Performance Pay</div><div>{{ formatMoney(c.variable_pay_amount) }} ({{ humanizeEnum(c.variable_pay_frequency) }})</div></div>
             </div>
 
             @if (c.statutory_lines.length) {
@@ -170,11 +170,11 @@ interface SalaryStructureRow {
                 <input class="input" type="number" [(ngModel)]="form['dearness_allowance_monthly']" />
               </div>
               <div>
-                <div class="cell-sub">HRA (Monthly)</div>
+                <div class="cell-sub">HRA — House Rent Allowance (Monthly)</div>
                 <input class="input" type="number" [(ngModel)]="form['hra_monthly']" />
               </div>
               <div>
-                <div class="cell-sub">LTA Amount</div>
+                <div class="cell-sub">Leave Travel Allowance — LTA (Monthly or Annual)</div>
                 <input class="input" type="number" [(ngModel)]="form['lta_amount']" />
               </div>
               <div>
@@ -263,17 +263,25 @@ export class EmpSalaryStructureComponent implements OnInit {
   readonly selfService = input(false);
 
   /** Base path for this tab's sub-resource — /employees/me/... on My Profile,
-   * /employees/{id}/... on the admin record screen. */
+   * /employees/{id}/... on the admin record screen. The admin arm used to be a
+   * template literal wrapping this very method, so it recursed into itself:
+   * opening this tab from the Master Record threw RangeError: Maximum call stack size
+   * exceeded out of ngOnInit and rendered nothing at all. That is why §2.2's
+   * own HRA / LTA / statutory fields read as missing from the built app — they
+   * are authored below, the tab just never got to paint. */
   protected basePath(): string {
     return this.selfService()
       ? `${environment.apiBaseUrl}/employees/me/salary-structures`
-      : `${this.basePath()}`;
+      : `${environment.apiBaseUrl}/employees/${this.employeeId()}/salary-structures`;
   }
 
 
   private readonly http = inject(HttpClient);
   private readonly policy = inject(PolicyStore);
   protected readonly formatMoney = formatMoney;
+  // LTA Payout Basis and Variable Pay Frequency come over the wire as the raw
+  // DB constants (MONTHLY / ANNUAL / QUARTERLY) and were rendering verbatim.
+  protected readonly humanizeEnum = humanizeEnum;
 
   protected readonly isLoading = signal(true);
   protected readonly current = signal<SalaryStructureRow | null>(null);

@@ -347,6 +347,15 @@ class CompanyProfile(Base, AuditMixin):
     # implemented (see the 409 guard in payroll_runs.create_payroll_run);
     # DAY_BASIS remains a legal CHECK value with no engine behind it.
     payroll_basis: Mapped[str] = mapped_column(String(10), nullable=False, default="HOUR_BASIS")
+    # Masters §3.6, "New in this revision": an input-source gate, not a
+    # calculation setting. Off (the default, and the only safe one) means any
+    # inbound device payload is rejected and Payroll -> Attendance shows the
+    # Biometric Feed as available-but-inactive rather than pretending a device
+    # exists. The endpoint is required only while the toggle is On — a
+    # conditional the API enforces, since a CHECK expressing it would also
+    # reject every existing row that has the toggle Off and no endpoint.
+    biometric_attendance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    biometric_device_endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class CompanyAddress(Base, AuditMixin):

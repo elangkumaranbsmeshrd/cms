@@ -250,6 +250,25 @@ class CompHoursRequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CompHoursPreviewOut(BaseModel):
+    """§2.6's three derived request fields — Day Type, Window Check, Monthly
+    Cap Check — computed for a not-yet-submitted request so the applicant can
+    SEE them rather than only meet them as a 422 on submit. The spec marks all
+    three "Derived, read-only" / "Derived, validated on submit"; the create
+    endpoint already computes exactly these values, this just answers the same
+    question one step earlier. Nothing here is persisted.
+    """
+
+    make_up_day_type: str
+    day_type_permitted: bool
+    compensation_window_days: int
+    window_last_permissible_date: date
+    within_window: bool
+    max_comp_hours_per_month: Decimal | None
+    month_hours_already_used: Decimal
+    within_monthly_cap: bool
+
+
 class CompHoursDecisionRequest(BaseModel):
     approve: bool
     decision_reason: str | None = None

@@ -21,22 +21,18 @@ const STATUS_OPTIONS = [
   { value: 'REJECTED', label: 'Rejected' },
 ];
 
-// DocumentOut (schemas/employee.py) carries file_id but no filename at all —
-// StoredFile.original_filename (models/platform.py:39) is never denormalized
-// onto the document row, and GET /files/{id} (files.py:111) serves raw file
-// bytes with a Content-Disposition header, not JSON metadata a RefLookup
-// could resolve through. There's also no generic "view/download this row's
-// file" row action yet anywhere — ListScreenComponent.runAction only ever
-// fires POST/DELETE (list-screen.component.ts), never a blob GET; the two
-// places that DO download a file (payslip-screen/conversation-screen
-// components) are bespoke, non-generic code, not something a plain
-// RowActionDef can express. So until one of those exists, the file's own id
-// (truncated, the same "nothing human-readable exists yet" treatment
-// vendor.record.config.ts gives row.id.slice(0, 8) as a header code) is the
-// honest stand-in rather than a dead link or a raw untruncated UUID.
-function fileLabel(row: EmployeeDocumentRow): string {
-  return row.file_id.slice(0, 8);
-}
+// DocumentOut now carries the real file name: employee_documents.py joins
+// StoredFile.original_filename in per row (_to_out/_to_outs), so §2.6's own
+// "File Name | Uploaded file" column has something human-readable to show.
+// This used to print row.file_id.slice(0, 8) — eight characters of a UUID —
+// because nothing on the row held a name.
+//
+// STILL DEFERRED, and deliberately: §2.6's View/Download row action. List
+// ScreenComponent.runAction only ever fires POST/DELETE (list-screen.
+// component.ts), never a blob GET; the places that DO download a file
+// (payslip-screen/conversation-screen) are bespoke components, not something
+// a plain RowActionDef can express. My Documents (my-documents.component.ts)
+// is bespoke and has its own working View button.
 
 // GET /employees/{employee_id}/documents (employee_documents.py:49) is a bare
 // `select(EmployeeDocument).where(employee_id == :id)` — no ?search=, no
@@ -65,11 +61,8 @@ export function buildEmployeeDocumentsListConfig(employeeId: string): ListScreen
     endpoint: `/employees/${employeeId}/documents`,
     exportable: false,
     searchParam: false,
-    // No filename field exists anywhere on this row (see fileLabel's own
-    // note) — 'note' is the closest free-text field an uploader actually
-    // wrote, standing in for §2.6's "Search covers File Name" until a real
-    // filename is denormalized onto DocumentOut.
-    searchFields: ['document_type', 'note'],
+    // §2.6: "Search covers File Name."
+    searchFields: ['file_name', 'document_type', 'note'],
     includeInactiveParam: false,
     filters: [
       {
@@ -106,7 +99,7 @@ export function buildEmployeeDocumentsListConfig(employeeId: string): ListScreen
     // Status (...), and Rejection Reason if applicable."
     columns: [
       { key: 'document_type', header: 'Document Type', cellClass: 'cell-strong', staticOptions: DOCUMENT_TYPE_OPTIONS },
-      { key: 'file_id', header: 'File', cellClass: 'mono', compute: fileLabel },
+      { key: 'file_name', header: 'File Name' },
       { key: 'uploaded_at', header: 'Uploaded On', type: 'date' },
       { key: 'status', header: 'Status', type: 'status', staticOptions: STATUS_OPTIONS },
       { key: 'rejection_reason', header: 'Rejection Reason' },

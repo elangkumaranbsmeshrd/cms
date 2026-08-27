@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.models.employee import Employee, EmployeeDocument
-from app.models.platform import User
+from app.models.platform import StoredFile, User
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
 from app.schemas.employee import DocumentOut, DocumentUpload, DocumentVerifyDecision
@@ -33,6 +33,7 @@ SCREEN = "employee.documents"
 _LIST_COLUMNS = [
     ColumnSpec("employee_name", "Employee Name"),
     ColumnSpec("document_type", "Document Type"),
+    ColumnSpec("file_name", "File Name"),
     ColumnSpec("status", "Status"),
     ColumnSpec("uploaded_at", "Uploaded On"),
 ]
@@ -46,19 +47,50 @@ def _as_client_error(exc: DBAPIError, fallback: str) -> HTTPException:
     return HTTPException(status.HTTP_409_CONFLICT, detail=fallback)
 
 
+async def _to_out(db: AsyncSession, row: EmployeeDocument) -> DocumentOut:
+    """§2.6's "File Name" column. EmployeeDocument stores only file_id; the
+    name is StoredFile.original_filename, so it is joined in here rather than
+    denormalised onto the document row — the same join-in-Python shape
+    customers.py's _load_customer_file_out and assets.py's _load_asset_file_out
+    already use. Before this the UI had nothing human-readable to show and fell
+    back to printing the first 8 characters of the file's UUID.
+    """
+    out = DocumentOut.model_validate(row)
+    stored = await db.get(StoredFile, row.file_id)
+    out.file_name = stored.original_filename if stored else ""
+    return out
+
+
+async def _to_outs(db: AsyncSession, rows: list[EmployeeDocument]) -> list[DocumentOut]:
+    """List counterpart to _to_out: one `.in_()` query for every document's
+    StoredFile instead of one db.get each. A row whose StoredFile is missing
+    simply isn't in the mapping, which lands on the same blank name."""
+    if not rows:
+        return []
+    stored_rows = (await db.execute(select(StoredFile).where(StoredFile.id.in_({r.file_id for r in rows})))).scalars().all()
+    by_id = {s.id: s for s in stored_rows}
+    outs = []
+    for row in rows:
+        out = DocumentOut.model_validate(row)
+        stored = by_id.get(row.file_id)
+        out.file_name = stored.original_filename if stored else ""
+        outs.append(out)
+    return outs
+
+
 @router.get("/employees/{employee_id}/documents", response_model=list[DocumentOut])
 async def list_employee_documents(
     employee_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN)),
-) -> list[EmployeeDocument]:
+) -> list[DocumentOut]:
     if perms.mode == "own":
         own_id = await org_scope.get_own_employee_id(db, current_user)
         if own_id != employee_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="You may only view your own documents")
     rows = (await db.execute(select(EmployeeDocument).where(EmployeeDocument.employee_id == employee_id))).scalars().all()
-    return list(rows)
+    return await _to_outs(db, list(rows))
 
 
 @router.post("/employees/{employee_id}/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -68,7 +100,7 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN, action="upload")),
-) -> EmployeeDocument:
+) -> DocumentOut:
     if perms.mode == "own":
         own_id = await org_scope.get_own_employee_id(db, current_user)
         if own_id != employee_id:
@@ -86,7 +118,7 @@ async def upload_document(
         await db.rollback()
         raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(row)
-    return row
+    return await _to_out(db, row)
 
 
 @router.delete("/employees/{employee_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -128,14 +160,16 @@ async def verification_queue(
         for row in rows:
             employee = await db.get(Employee, row.employee_id)
             employee_name = f"{employee.first_name} {employee.last_name or ''}".strip() if employee else row.employee_id
+            stored = await db.get(StoredFile, row.file_id)
             export_rows.append({
                 "employee_name": employee_name, "document_type": row.document_type,
+                "file_name": stored.original_filename if stored else "",
                 "status": row.status, "uploaded_at": row.uploaded_at,
             })
         filters_applied = {"status": status_filter}
         return await list_export.build_export(format, db, current_user, "Employee Documents", _LIST_COLUMNS, export_rows, filters_applied)
 
-    return [DocumentOut.model_validate(row) for row in rows]
+    return await _to_outs(db, rows)
 
 
 @router.post("/documents/{document_id}/verify", response_model=DocumentOut)
@@ -145,7 +179,7 @@ async def verify_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN, action="verify")),
-) -> EmployeeDocument:
+) -> DocumentOut:
     row = await db.get(EmployeeDocument, document_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -177,4 +211,4 @@ async def verify_document(
         related_record_type="employee_document", related_record_id=row.id,
     )
 
-    return row
+    return await _to_out(db, row)

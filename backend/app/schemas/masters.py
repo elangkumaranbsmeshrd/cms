@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
@@ -201,6 +201,25 @@ class CompanyProfileWrite(BaseModel):
     letterhead_file_id: str | None = None
     default_billing_tax_head_id: str | None = None
     payroll_basis: str = "HOUR_BASIS"  # HOUR_BASIS | DAY_BASIS — A121; only HOUR_BASIS is implemented
+    # Masters §3.6, "New in this revision". Defaults Off: the spec defines Off
+    # as an active refusal ("any inbound device payload is rejected"), so a
+    # profile that has never been told otherwise must not accept device writes.
+    biometric_attendance: bool = False
+    biometric_device_endpoint: str | None = None
+
+    @model_validator(mode="after")
+    def _endpoint_required_when_biometric_on(self) -> "CompanyProfileWrite":
+        # §3.6: "Conditional — required if Biometric Attendance is On … Where
+        # the feed comes from, recorded so the source of an attendance record
+        # is auditable." Enforced here rather than as a DB CHECK, which would
+        # also reject every existing row that has the toggle Off and no
+        # endpoint.
+        if self.biometric_attendance and not (self.biometric_device_endpoint or "").strip():
+            raise ValueError(
+                "A Biometric Device Endpoint / Reference is required when Biometric Attendance is On — "
+                "it records where the feed comes from, so the source of an attendance record stays auditable"
+            )
+        return self
 
     @field_validator("gstin")
     @classmethod

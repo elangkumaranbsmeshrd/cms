@@ -103,6 +103,25 @@ async def _recompute_declaration_totals(db: AsyncSession, declaration: TaxDeclar
     declaration.has_flagged_lines = any(line.flagged_for_review for line in lines)
 
 
+async def _line_to_out(db: AsyncSession, line: TaxDeclarationLine) -> TaxDeclarationLineOut:
+    """One line plus whatever proofs are attached to it. §2.14 makes Proof
+    Upload part of the line ("File upload (multiple)"), so a line that comes
+    back without its proofs leaves the screen unable to say whether the
+    employee has already attached one — which is exactly what a
+    Requires Proof head is asking them to check."""
+    out = TaxDeclarationLineOut.model_validate(line)
+    out.proofs = list(
+        (
+            await db.execute(
+                select(TaxDeclarationLineProof)
+                .where(TaxDeclarationLineProof.tax_declaration_line_id == line.id)
+                .order_by(TaxDeclarationLineProof.uploaded_at)
+            )
+        ).scalars().all()
+    )
+    return out
+
+
 async def _declaration_to_out(db: AsyncSession, declaration: TaxDeclaration) -> TaxDeclarationOut:
     lines = (
         await db.execute(
@@ -110,7 +129,7 @@ async def _declaration_to_out(db: AsyncSession, declaration: TaxDeclaration) -> 
         )
     ).scalars().all()
     out = TaxDeclarationOut.model_validate(declaration)
-    out.lines = list(lines)
+    out.lines = [await _line_to_out(db, line) for line in lines]
     return out
 
 
@@ -298,7 +317,7 @@ async def update_declaration_line(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN, action="edit")),
-) -> TaxDeclarationLine:
+) -> TaxDeclarationLineOut:
     line = await db.get(TaxDeclarationLine, line_id)
     if line is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -328,7 +347,7 @@ async def update_declaration_line(
         await db.rollback()
         raise _as_client_error(exc, "Amount exceeds the declaration cap for this head") from exc
     await db.refresh(line)
-    return line
+    return await _line_to_out(db, line)
 
 
 @router.post("/tax-declaration-lines/{line_id}/proofs", response_model=TaxDeclarationLineProofOut, status_code=status.HTTP_201_CREATED)
@@ -406,7 +425,7 @@ async def verify_declaration_line(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     perms: PermissionSet = Depends(require_screen(SCREEN, action="verify")),
-) -> TaxDeclarationLine:
+) -> TaxDeclarationLineOut:
     line = await db.get(TaxDeclarationLine, line_id)
     if line is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -430,7 +449,7 @@ async def verify_declaration_line(
         await db.rollback()
         raise _as_client_error(exc, "Rejected by a database constraint") from exc
     await db.refresh(line)
-    return line
+    return await _line_to_out(db, line)
 
 
 @router.post("/employees/{employee_id}/tax-declarations/current/verify", response_model=TaxDeclarationOut)

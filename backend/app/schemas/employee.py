@@ -342,6 +342,13 @@ class DocumentOut(BaseModel):
     employee_id: str
     document_type: str
     file_id: str
+    # Employee §2.6's document list leads with a "File Name" column
+    # ("Uploaded file"), and its search "covers File Name" — but the name lives
+    # on StoredFile (models/platform.py), not on EmployeeDocument, so it is
+    # joined in by the endpoint. Same shape customers.py's CustomerFileOut and
+    # assets.py's AssetFileOut already use for the identical split; blank only
+    # if the linked StoredFile row is somehow gone, never a KeyError.
+    file_name: str = ""
     note: str | None
     status: str
     uploaded_at: datetime
@@ -546,6 +553,14 @@ class TaxDeclarationLineWrite(BaseModel):
     other_description: str | None = None
 
 
+class TaxDeclarationLineProofOut(BaseModel):
+    id: str
+    tax_declaration_line_id: str
+    file_id: str
+    uploaded_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TaxDeclarationLineOut(BaseModel):
     id: str
     tax_declaration_id: str
@@ -562,14 +577,12 @@ class TaxDeclarationLineOut(BaseModel):
     flagged_for_review: bool
     verification_status: str
     verification_note: str | None
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TaxDeclarationLineProofOut(BaseModel):
-    id: str
-    tax_declaration_line_id: str
-    file_id: str
-    uploaded_at: datetime
+    # Employee §2.14: "Proof Upload | File upload (multiple)". Without the
+    # attached proofs coming back, the upload control gave the employee no
+    # evidence anything landed — and no way to tell an already-proved line from
+    # one still missing its receipt. Populated by tax_declarations.py's
+    # _line_to_out; the proof rows themselves are a separate table.
+    proofs: list[TaxDeclarationLineProofOut] = []
     model_config = ConfigDict(from_attributes=True)
 
 

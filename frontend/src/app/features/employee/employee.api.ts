@@ -53,6 +53,10 @@ export interface EmployeeDocumentRow {
   employee_id: string;
   document_type: string;
   file_id: string;
+  // §2.6's "File Name" column. Joined in from StoredFile.original_filename by
+  // employee_documents.py's own _to_out/_to_outs — EmployeeDocument itself
+  // stores only the file_id.
+  file_name: string;
   note: string | null;
   status: string;
   uploaded_at: string;

@@ -128,11 +128,15 @@ export class EmpEmergencyContactsComponent implements OnInit {
   readonly selfService = input(false);
 
   /** Base path for this tab's sub-resource — /employees/me/... on My Profile,
-   * /employees/{id}/... on the admin record screen. */
+   * /employees/{id}/... on the admin record screen. The admin arm used to be a
+   * template literal wrapping this very method, so it recursed into itself:
+   * opening this tab from the Master Record threw RangeError: Maximum call stack size
+   * exceeded out of ngOnInit and rendered nothing at all — the tab's fields are
+   * all authored below, it just never got to paint. */
   protected basePath(): string {
     return this.selfService()
       ? `${environment.apiBaseUrl}/employees/me/emergency-contacts`
-      : `${this.basePath()}`;
+      : `${environment.apiBaseUrl}/employees/${this.employeeId()}/emergency-contacts`;
   }
 
 

@@ -694,6 +694,12 @@ export interface SingletonFormConfig<T = Record<string, unknown>> {
   // (Email Configuration's /server-settings is GET+PUT only), so POSTing the
   // first save 405s and the screen can never be set up. Defaults to 'POST'.
   readonly createMethod?: 'POST' | 'PUT';
+  // Defaults to 'Save'. Masters §3.6 asks Company Profile's button to read
+  // "Save Changes" — an edit-in-place screen, where "Save" alone reads as
+  // creating something. Made overridable per screen rather than renamed
+  // globally, because the generic caption is right for the singletons that
+  // genuinely are first-time setup (Email Configuration, Work Week).
+  readonly submitLabel?: string;
   readonly emptyRow: () => Partial<T>;
   readonly fields: readonly FieldConfig<T>[];
   readonly screenAction?: string; // defaults to 'edit'

@@ -11,6 +11,10 @@ interface DocumentRow {
   readonly id: string;
   readonly document_type: string;
   readonly file_id: string;
+  // §2.6's "File Name" column — joined in from StoredFile.original_filename
+  // by employee_documents.py's _to_outs (the document row itself stores only
+  // the file_id, which is what this column used to print eight characters of).
+  readonly file_name: string;
   readonly note: string | null;
   readonly status: string;
   readonly uploaded_at: string;
@@ -110,15 +114,16 @@ const STATUS_OPTIONS = [
         </div>
       }
 
-      <!-- Both filters carry an explicit aria-label. They had no name of any
-           kind — not even a title to fall back on — so axe flagged them as
-           [critical] select-name and a screen reader announced two bare combo
-           boxes. The dimension each one narrows lives only in its "All
+      <!-- Every control in this row carries an explicit aria-label. The two
+           selects had no name of any kind — not even a title to fall back on —
+           so axe flagged them as [critical] select-name and a screen reader
+           announced two bare combo boxes. The dimension each one narrows lives only in its "All
            Document Types" / "All Statuses" option, which is the current VALUE,
            not the control's name. See company-expenses.component.ts's own
            filter-row comment for the full reasoning. -->
       <div class="filterbar" style="margin-bottom: 12px;">
         <div class="filter-row">
+          <input class="input" style="width: auto;" type="search" aria-label="Search by file name" placeholder="Search file name…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
           <select class="input" style="width: auto;" aria-label="Document Type" [ngModel]="typeFilter()" (ngModelChange)="typeFilter.set($event)">
             <option [ngValue]="null">All Document Types</option>
             @for (t of DOCUMENT_TYPE_OPTIONS; track t.value) {
@@ -140,7 +145,7 @@ const STATUS_OPTIONS = [
             <thead>
               <tr>
                 <th>Document Type</th>
-                <th>File</th>
+                <th>File Name</th>
                 <th>Uploaded On</th>
                 <th>Status</th>
                 <th>Rejection Reason</th>
@@ -151,7 +156,7 @@ const STATUS_OPTIONS = [
               @for (d of filteredDocuments(); track d.id) {
                 <tr>
                   <td class="cell-strong">{{ typeLabel(d.document_type) }}</td>
-                  <td class="mono">{{ d.file_id.slice(0, 8) }}</td>
+                  <td>{{ d.file_name || '—' }}</td>
                   <td class="mono">{{ d.uploaded_at.slice(0, 10) }}</td>
                   <td>
                     <span class="badge-s" [class.b-warn]="d.status === 'PENDING_VERIFICATION'" [class.b-ok]="d.status === 'VERIFIED'" [class.b-danger]="d.status === 'REJECTED'">{{ statusLabel(d.status) }}</span>
@@ -189,10 +194,23 @@ export class MyDocumentsComponent implements OnInit {
 
   protected readonly typeFilter = signal<string | null>(null);
   protected readonly statusFilter = signal<string | null>(null);
+  // §2.6: "Search covers File Name." Client-side, like both filters beside it
+  // — GET /employees/{id}/documents takes no ?search= param (this is one
+  // person's short list, not a paged directory).
+  protected readonly search = signal('');
   protected readonly filteredDocuments = computed(() => {
     const type = this.typeFilter();
     const status = this.statusFilter();
-    return this.documents().filter((d) => (!type || d.document_type === type) && (!status || d.status === status));
+    const q = this.search().trim().toLowerCase();
+    return this.documents().filter(
+      (d) =>
+        (!type || d.document_type === type) &&
+        (!status || d.status === status) &&
+        // ?? '' for the same reason my-tax-declarations guards proofCount():
+        // file_name is new on DocumentOut, and a backend process older than this
+        // bundle answers without it.
+        (!q || (d.file_name ?? '').toLowerCase().includes(q)),
+    );
   });
 
   protected readonly showUpload = signal(false);

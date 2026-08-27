@@ -2,6 +2,7 @@ import { RecordScreenConfig } from '../../../shared/screens/screen.types';
 import { EmployeeRow } from '../employee.api';
 import { buildAssignedAssetsListConfig } from './emp.assigned-assets.list.config';
 import { buildEmployeeDocumentsListConfig } from './emp.documents.list.config';
+import { EmpAccountLoginComponent } from './emp.account-login.component';
 import { EmpSalaryStructureComponent } from './emp.salary-structure.component';
 import { EmpInsuranceComponent } from './emp.insurance.component';
 import { EmpEmergencyContactsComponent } from './emp.emergency-contacts.component';
@@ -170,117 +171,14 @@ const config: RecordScreenConfig<EmployeeRow> = {
         },
       ],
     },
-    // §2.2 Tab: Account & Login. Set Role/Must Change Password on Next
-    // Login/Last Login all live on the linked `users` row, not on the
-    // employee (see LoginStatusOut's own backend docstring) — sourced via
-    // secondaryEndpoint, hidden until it resolves to a real object (no
-    // login yet -> null). Account Status/Disable/Enable visibility uses
-    // row.login_removed_at instead (already on EmployeeOut, no secondary
-    // fetch needed for that part).
-    {
-      id: 'account_login',
-      label: 'Account & Login',
-      actions: [
-        {
-          label: 'Create Login',
-          endpoint: (id) => `/employees/${id}/create-login`,
-          screenAction: 'manage_login',
-          visible: (row) => !row.user_id,
-          selectParam: {
-            label: 'Role',
-            param: 'role_code',
-            defaultValue: 'EMPLOYEE',
-            options: [
-              { value: 'EMPLOYEE', label: 'Employee' },
-              { value: 'MANAGER', label: 'Manager' },
-              { value: 'ACCOUNTANT', label: 'Accountant' },
-              { value: 'HR', label: 'HR' },
-              { value: 'SUPER_ADMIN', label: 'Super Admin' },
-            ],
-          },
-        },
-        {
-          label: 'Disable Login',
-          endpoint: (id) => `/employees/${id}/disable-login`,
-          screenAction: 'manage_login',
-          visible: (row) => !!row.user_id && !row.login_removed_at,
-          confirm: 'Disable this login? It ends every active session immediately — all of this person’s refresh tokens are revoked at once.',
-        },
-        {
-          label: 'Enable Login',
-          endpoint: (id) => `/employees/${id}/enable-login`,
-          screenAction: 'manage_login',
-          visible: (row) => !!row.user_id && !!row.login_removed_at,
-        },
-        {
-          label: 'Reset Password',
-          endpoint: (id) => `/employees/${id}/reset-password`,
-          screenAction: 'manage_login',
-          visible: (row) => !!row.user_id,
-          confirm: 'Generate a new temporary password and email it to this employee? Every one of their active sessions will be signed out.',
-        },
-        // §2.12 Onboarding's "Send Welcome Email" button — lives here, not
-        // on the Onboarding tab itself, since RecordActionDef supports a
-        // per-record dynamic endpoint and SecondaryActionDef (the
-        // checklist shape's own action mechanism) doesn't — see
-        // emp.onboarding.checklist.config.ts's own note. Different RBAC
-        // screen key (employee.onboarding) than the rest of this tab
-        // (employee.master_record), same as every other action here being
-        // gated on its OWN real screen/action, not a blanket tab-level one.
-        {
-          label: 'Send Welcome Email',
-          endpoint: (id) => `/employees/${id}/send-welcome-email`,
-          screenId: 'employee.onboarding',
-          screenAction: 'send_welcome_email',
-          confirm: "Send this employee's welcome email now?",
-        },
-      ],
-      // employees.py's GET /{id}/login-status (LoginStatusOut) — see its
-      // own docstring for why this can't just be more EmployeeOut fields.
-      secondaryEndpoint: (id) => `/employees/${id}/login-status`,
-      sections: [
-        {
-          title: 'Login Access',
-          fields: [
-            { key: 'email', label: 'Login Email' },
-            {
-              key: 'user_id',
-              label: 'Account Status',
-              compute: (row) => (row.user_id ? (row.login_removed_at ? 'Disabled' : 'Enabled') : 'No login'),
-            },
-            {
-              key: 'user_id',
-              label: 'Set Role',
-              hideWhenNoSecondary: true,
-              compute: (_row, secondary) => (secondary as { role_name?: string } | null)?.role_name,
-            },
-            {
-              key: 'user_id',
-              label: 'Must Change Password on Next Login',
-              hideWhenNoSecondary: true,
-              compute: (_row, secondary) => ((secondary as { must_change_password?: boolean } | null)?.must_change_password ? 'Yes' : 'No'),
-            },
-            {
-              key: 'user_id',
-              label: 'Last Login',
-              hideWhenNoSecondary: true,
-              compute: (_row, secondary) => {
-                const at = (secondary as { last_login_at?: string | null } | null)?.last_login_at;
-                return at ? new Date(at).toLocaleString('en-IN') : 'Never';
-              },
-            },
-            // Extra Permissions (§2.2's per-person RBAC override list): reads
-            // and writes the SAME rbac_admin.py /rbac/overrides endpoint the
-            // standalone RBAC → Permission Overrides admin screen owns
-            // (that screen is where an override actually gets created —
-            // picking a module/screen/action needs that screen's own
-            // picker). Deliberately not duplicated here as a second, partial
-            // picker UI; once that admin screen exists, link to it filtered
-            // by this employee's user_id rather than rebuilding it inline.
-          ],
-        },
-      ],
-    },
+    // §2.2 Tab: Account & Login — a bespoke component, not a 'fields' tab,
+    // because §2.2's own field table ends with an Extra Permissions LIST plus
+    // a "+ Add Permission Override" action, and a RecordFieldsTab has nowhere
+    // to render a table (record-screen.component.ts renders actions plus
+    // captioned single values only). Every login action, RBAC gate and confirm
+    // string that used to live here moved with it, unchanged — see
+    // emp.account-login.component.ts's own doc comment.
+    { kind: 'component', id: 'account_login', label: 'Account & Login', component: EmpAccountLoginComponent, idInputName: 'employeeId' },
     // §2.2 Tab: Bank & Statutory.
     {
       id: 'bank_statutory',

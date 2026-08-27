@@ -78,6 +78,30 @@ function targetOf(row: ChangeLogRow): string {
   return toggleKey ?? '—';
 }
 
+/** ISO timestamp -> 'dd-mm-yyyy, HH:mm'. §4.4 names this column "Date/Time",
+ * and on this screen the time is the load-bearing half: one Matrix save writes
+ * a whole batch of entries within the same second, so the shared 'date' column
+ * type (cell-format's formatDate(), date only) left every row of a 121-entry
+ * log reading the same bare date — an audit trail you cannot order. The
+ * backend's own export already labels this column "Date/Time" and sends the
+ * full timestamp (_CHANGE_LOG_COLUMNS, rbac_admin.py), so the screen was also
+ * the odd one out against its own PDF.
+ *
+ * Repeats conversation-screen.component.ts's algorithm — UTC getters, matching
+ * how this codebase treats every backend datetime — rather than reusing it,
+ * because that one is a protected member of a shared component, not an
+ * exported helper (the same reason project.bug-detail.component.ts repeats it).
+ */
+function formatWhen(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const min = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${dd}-${mm}-${d.getUTCFullYear()}, ${hh}:${min}`;
+}
+
 /** §4.4 Permission Change Log (rbac.change_log) — "an audit trail of
  * every permission change made in this module... immutable at the
  * database level" (permission_change_log carries real MySQL triggers
@@ -179,12 +203,15 @@ const config: ListScreenConfig<ChangeLogRow> = {
     },
   ],
   columns: [
-    { key: 'changed_at', header: 'When', type: 'date', cellClass: 'mono' },
+    { key: 'changed_at', header: 'Date/Time', compute: (row) => formatWhen(row.changed_at), cellClass: 'mono' },
     { key: 'changed_by_name', header: 'Changed By', cellClass: 'cell-strong' },
     { key: 'layer', header: 'Change Type', type: 'status', staticOptions: CHANGE_TYPE_OPTIONS },
     { key: 'target', header: 'Target', compute: (row) => targetOf(row) },
-    { key: 'before_value', header: 'From', type: 'status', compute: (row) => formatChangeValue(row.layer, row.before_value) },
-    { key: 'after_value', header: 'To', type: 'status', compute: (row) => formatChangeValue(row.layer, row.after_value) },
+    // §4.4's own column names. From/To sat immediately right of a date column
+    // and read as a date range rather than as the before/after pair this log
+    // exists to record.
+    { key: 'before_value', header: 'Old Value', type: 'status', compute: (row) => formatChangeValue(row.layer, row.before_value) },
+    { key: 'after_value', header: 'New Value', type: 'status', compute: (row) => formatChangeValue(row.layer, row.after_value) },
     {
       key: 'applied_to',
       header: 'Applied To',

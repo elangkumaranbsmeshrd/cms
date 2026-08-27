@@ -34,6 +34,7 @@ Run:  python build-docs/_gap_check.py
 
 import glob
 import io
+import json
 import re
 import unicodedata
 
@@ -83,6 +84,13 @@ def labels_in(paths):
             labs.add(norm(m))
         for m in re.findall(r"placeholder:\s*'([^']+)'", t):
             labs.add(norm(m))
+        # createLabel is what EVERY "+ Add X" button in this app is declared
+        # with — the shared list header supplies the plus icon. Omitting it made
+        # the checker report seven working Masters create buttons as missing,
+        # which is six more phantoms than any real finding it produced there.
+        for m in re.findall(r"createLabel:\s*'([^']+)'", t):
+            labs.add(norm(m))
+            labs.add(norm('+ ' + m))
         for m in re.findall(r"section:\s*['\"]([^'\"]+)['\"]", t):
             labs.add(norm(m))
         # Hand-written templates.
@@ -145,6 +153,18 @@ def is_prose(item):
     return False
 
 
+# Items already verified in the running app and found not to be defects. Kept in
+# a separate file so the verdicts survive a regeneration, and so adding one is a
+# deliberate act with a written reason rather than an edit to this script.
+try:
+    ADJUDICATED = {
+        k: v
+        for k, v in json.load(open('build-docs/gap-adjudicated.json', encoding='utf-8')).items()
+        if not k.startswith('_')
+    }
+except FileNotFoundError:
+    ADJUDICATED = {}
+
 txt = open('build-docs/SPEC-INVENTORY-CHECKLIST.md', encoding='utf-8').read()
 out = io.StringIO()
 W = out.write
@@ -157,7 +177,7 @@ W("runtime value, or one hidden behind a conditional, looks missing here and is 
 W("**Verify in the browser before changing anything.**\n\n")
 
 cur_mod = cur_screen = cur_feat = section = None
-tot = miss = skipped = 0
+tot = miss = skipped = adjudicated = 0
 per = {}
 
 for ln in txt.split('\n'):
@@ -204,12 +224,20 @@ for ln in txt.split('\n'):
             continue
         if matches(n, SHARED):
             continue  # rendered by a shared component — present, just not in this dir
+        verdict = ADJUDICATED.get(f"{cur_screen} :: {item}")
+        if verdict:
+            adjudicated += 1
+            W(f"- ADJUDICATED [{section}] `{item}` — {cur_screen}\n      {verdict}\n")
+            continue
         miss += 1
         per[cur_feat][1] += 1
         W(f"- **MISSING** [{section}] `{item}` — {cur_screen}\n")
 
 open('build-docs/GAP-REPORT.md', 'w', encoding='utf-8').write(out.getvalue())
-print(f"checked={tot}  flagged_missing={miss} ({100 * miss // max(tot, 1)}%)  prose_lines_skipped={skipped}\n")
+print(
+    f"checked={tot}  flagged_missing={miss} ({100 * miss // max(tot, 1)}%)  "
+    f"adjudicated={adjudicated}  prose_lines_skipped={skipped}\n"
+)
 for f, (t, m) in sorted(per.items(), key=lambda x: -x[1][1]):
     if t:
         print(f"  {f:16} {m:4}/{t:4} missing")

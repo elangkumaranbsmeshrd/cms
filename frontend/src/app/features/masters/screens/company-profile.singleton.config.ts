@@ -67,6 +67,8 @@ export function emptyCompanyProfileRow(): Partial<CompanyProfileRow> {
     website: null,
     default_billing_tax_head_id: null,
     payroll_basis: 'HOUR_BASIS',
+    biometric_attendance: false,
+    biometric_device_endpoint: null,
   };
 }
 
@@ -74,6 +76,10 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
   shape: 'singleton',
   id: 'masters.company_profile',
   title: 'Company Profile',
+  // §3.6: "General Info shows a single form with a 'Save Changes' button." This
+  // screen edits a profile that already exists, so the generic 'Save' read as
+  // if it were creating one.
+  submitLabel: 'Save Changes',
   loadEndpoint: '/masters/company-profile',
   createEndpoint: '/masters/company-profile',
   updateEndpoint: '/masters/company-profile',
@@ -161,6 +167,29 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
       staticOptions: PAYROLL_BASIS_OPTIONS,
       required: true,
       hint: 'Read by Run Payroll. Only Hour Basis is implemented end-to-end — required hours come from Masters → Work Week & Hours (§3.20), worked hours from Attendance. A run under any other basis is rejected with a 409.',
+    },
+    // §3.6, "New in this revision". An input-source gate, not a calculation
+    // setting: switching it never alters attendance already recorded and never
+    // changes how hours are computed. Off is the default because §3.6 defines
+    // Off as an active refusal — "any inbound device payload is rejected", and
+    // Payroll → Attendance's Biometric Feed tab shows the integration as
+    // available-but-inactive rather than pretending a device exists.
+    {
+      key: 'biometric_attendance',
+      label: 'Biometric Attendance',
+      type: 'checkbox',
+      required: true,
+      hint: 'Off — manual entry is the only way attendance gets recorded, and any inbound device payload is rejected. On — a device or external feed may write to the same attendance fields manual entry writes to. Switching this never changes attendance already recorded, and never changes how hours are calculated.',
+    },
+    {
+      key: 'biometric_device_endpoint',
+      label: 'Biometric Device Endpoint / Reference',
+      type: 'text',
+      // §3.6 makes this conditional, not optional: required once the toggle is
+      // On. The server enforces the same rule (CompanyProfileWrite's own
+      // validator), so a form bypass cannot save an On toggle with no source.
+      visibleWhen: (m) => !!m['biometric_attendance'],
+      hint: 'Where the feed comes from — a device, an HR system, or a mobile check-in service. Recorded so the source of an attendance record stays auditable.',
     },
   ],
   // Two things Masters §3.6a's Fields Table and the prototype's General Info

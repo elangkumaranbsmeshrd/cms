@@ -15,6 +15,7 @@ computed FROM, correctly guarded, per BUILD-PROMPT §13's Phase 1 scope
 import calendar
 import logging
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -39,9 +40,15 @@ from app.schemas.masters import (
 )
 from app.services import list_export
 from app.services.pdf_engine import ColumnSpec
+from app.services.payroll_engine import resolve_pay_period
 
 router = APIRouter(prefix="/masters/work-week-policies", tags=["masters"])
 SCREEN = "masters.work_week_hours"
+
+# Masters §3.20c, Screen Design — Pay Cycle tab: "a Resolved Periods table
+# previewing three consecutive months' actual date ranges and Salary Credited
+# date". Three is the spec's own number, not a page size.
+_RESOLVED_PERIOD_PREVIEW_MONTHS = 3
 
 # Masters §3.20 Screen Design, Work Week Policies list: "Policy, Applies To,
 # Gross h/day, Break, Net h/day, Weekly Target, Weekly Off, Saturday Rule,
@@ -324,6 +331,58 @@ async def list_pay_cycles(
     # response_model validation would otherwise re-add fields just removed.
     rows = list((await db.execute(select(PayCycle))).scalars().all())
     return [apply_field_masking(PayCycleOut.model_validate(p).model_dump(), perms) for p in rows]
+
+
+@pay_cycle_router.get("/resolved-periods", response_model=None)
+async def list_resolved_periods(
+    db: AsyncSession = Depends(get_db),
+    perms: PermissionSet = Depends(require_screen(SCREEN)),
+) -> list[dict]:
+    """Masters §3.20c's **Resolved Periods**: "Read-only, derived... Not
+    stored — computed live from Start Day, End Day and Salary Credit Day for
+    whichever months are being previewed, so the effect of a change is
+    visible before it's saved."
+
+    §3.20's Implementation Status defers this view to "frontend work against
+    Payroll's resolution" — so it is Payroll's own resolve_pay_period that
+    answers here, called three times, rather than a second copy of the
+    clamping and no-overlap rules that would be free to drift from the one
+    Run Payroll actually pays people by. The frontend has no equivalent
+    resolver and must not grow one for the same reason.
+
+    Three consecutive months from today, per the spec's own wording
+    ("previewing three consecutive months' actual date ranges and Salary
+    Credited date"). No active cycle yet means no window to resolve, which
+    is an empty preview, not an error.
+    """
+    cycle = (await db.execute(select(PayCycle).where(PayCycle.is_active.is_(True)))).scalar_one_or_none()
+    if cycle is None:
+        return []
+
+    today = date.today()
+    out: list[dict] = []
+    for offset in range(_RESOLVED_PERIOD_PREVIEW_MONTHS):
+        month = (today.month - 1 + offset) % 12 + 1
+        year = today.year + (today.month - 1 + offset) // 12
+        resolution = resolve_pay_period(month, year, cycle.cycle_type, cycle.start_day, cycle.end_day, cycle.salary_credit_day)
+        out.append(
+            apply_field_masking(
+                {
+                    # The month a person asks Run Payroll for — NOT the month
+                    # the window happens to start in, which on a 26th–25th
+                    # cycle is the previous one. Naming it the way the payroll
+                    # run names it is the whole point of the preview.
+                    "id": f"{year}-{month:02d}",
+                    "payroll_month": f"{calendar.month_name[month]} {year}",
+                    "period_start": resolution.period_start.isoformat(),
+                    "period_end": resolution.period_end.isoformat(),
+                    "salary_credit_date": resolution.salary_credit_date.isoformat(),
+                    "days_in_period": (resolution.period_end - resolution.period_start).days + 1,
+                },
+                perms,
+            )
+        )
+    return out
 
 
 @pay_cycle_router.post("", response_model=None, status_code=status.HTTP_201_CREATED)

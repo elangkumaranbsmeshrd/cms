@@ -19,6 +19,10 @@ interface SchemeElectionRow {
   readonly elected_at: string;
   readonly superseded_at: string | null;
 }
+interface DeclarationProofRow {
+  readonly id: string;
+  readonly file_id: string;
+}
 interface DeclarationLineRow {
   readonly id: string;
   readonly declaration_name_snapshot: string;
@@ -30,6 +34,7 @@ interface DeclarationLineRow {
   readonly flagged_for_review: boolean;
   readonly verification_status: string;
   readonly verification_note: string | null;
+  readonly proofs: readonly DeclarationProofRow[];
 }
 interface DeclarationRow {
   readonly id: string;
@@ -153,7 +158,21 @@ const VERIFICATION_OPTIONS = [
                        uses for its own repeated array-table rows. -->
                   @for (l of d.lines; track l.id) {
                     <tr>
-                      <td class="cell-strong">{{ l.declaration_name_snapshot }}</td>
+                      <td>
+                        <div class="cell-strong">{{ l.declaration_name_snapshot }}</div>
+                        <!-- §2.14's own Guidance column: "The head's Description
+                             — shown as helper text under the field, so the
+                             employee knows what qualifies without asking HR."
+                             It arrives on every line as guidance_snapshot and
+                             was being dropped on the floor: the value was in
+                             the response, nothing rendered it. Sits under the
+                             declaration's name rather than under the amount
+                             box because in a table that is the only cell wide
+                             enough to read a sentence in. -->
+                        @if (l.guidance_snapshot) {
+                          <div class="hint" style="margin-top: 2px;">{{ l.guidance_snapshot }}</div>
+                        }
+                      </td>
                       <td class="mono r">{{ l.declaration_cap_snapshot ? formatMoney(l.declaration_cap_snapshot) : '—' }}</td>
                       <td class="r">
                         @if (d.status === 'DRAFT') {
@@ -171,24 +190,45 @@ const VERIFICATION_OPTIONS = [
                             }
                           </select>
                         } @else {
-                          <span class="badge-s" [class.b-success]="l.verification_status === 'PROOF_MATCHES'" [class.b-danger]="l.verification_status === 'REJECTED' || l.verification_status === 'PROOF_MISSING'">{{ l.verification_status }}</span>
+                          <!-- Was printing the raw column value — NOT_REVIEWED,
+                               PROOF_MATCHES — to everyone who cannot verify.
+                               VERIFICATION_OPTIONS already holds the readable
+                               label the verifier's own dropdown shows. -->
+                          <span class="badge-s" [class.b-success]="l.verification_status === 'PROOF_MATCHES'" [class.b-danger]="l.verification_status === 'REJECTED' || l.verification_status === 'PROOF_MISSING'">{{ verificationLabel(l.verification_status) }}</span>
                         }
                       </td>
                       <td style="white-space: nowrap;">
                         @if (d.status === 'DRAFT') {
                           <button class="btn sm ghost" type="button" (click)="saveLine(l)">Save</button>
                         }
-                        @if (l.requires_proof_snapshot) {
-                          <!-- The wrapping <label> already names this input
-                               "Upload Proof", so it was never an axe finding —
-                               but every row names its input identically, which
-                               is the same "named yet unusable" problem as the
-                               two cells above. The row's declaration name makes
-                               it say WHICH proof. -->
+                        <!-- §2.14: proof is "Mandatory if the head has
+                             Requires Proof / Reference set to Yes, OPTIONAL
+                             OTHERWISE" — so the control belongs on every line,
+                             including the fixed "Other Declared Deduction"
+                             catch-all, which the same section describes as
+                             "Amount + Description + optional proof". It used to
+                             render only on requires-proof lines, leaving an
+                             employee with a receipt for anything else nowhere
+                             to put it. Hidden once submitted, since the
+                             declaration is locked for the financial year (the
+                             backend rejects a late proof anyway).
+                             The wrapping <label> names this input, but every
+                             row would name it identically — the row's own
+                             declaration name is what makes the name usable to
+                             a screen reader arrowing down the column. -->
+                        @if (d.status === 'DRAFT') {
                           <label class="btn sm ghost" style="cursor: pointer;">
                             Upload Proof
-                            <input type="file" style="display: none;" [attr.aria-label]="'Upload Proof — ' + l.declaration_name_snapshot" (change)="uploadProof(l, $event)" />
+                            <input type="file" multiple style="display: none;" [attr.aria-label]="proofLabel(l)" (change)="uploadProof(l, $event)" />
                           </label>
+                        }
+                        <!-- Nothing on screen said whether a proof had landed:
+                             the upload posted and the row looked identical
+                             afterwards. -->
+                        @if (proofCount(l)) {
+                          <span class="badge-s b-success" style="margin-left: 6px;">{{ proofCount(l) }} attached</span>
+                        } @else if (l.requires_proof_snapshot) {
+                          <span class="badge-s b-warn" style="margin-left: 6px;">Proof required</span>
                         }
                       </td>
                     </tr>
@@ -309,19 +349,58 @@ export class MyTaxDeclarationsComponent implements OnInit {
     });
   }
 
+  /** Read through a helper, not `line.proofs.length` in the template: the
+   * field is new on TaxDeclarationLineOut, and a backend process older than
+   * this bundle answers without it — which would throw inside the template and
+   * blank the whole screen rather than just showing no badge. */
+  protected verificationLabel(value: string): string {
+    return VERIFICATION_OPTIONS.find((v) => v.value === value)?.label ?? value;
+  }
+
+  protected proofCount(line: DeclarationLineRow): number {
+    return line.proofs?.length ?? 0;
+  }
+
+  protected proofLabel(line: DeclarationLineRow): string {
+    const which = `Upload Proof — ${line.declaration_name_snapshot}`;
+    return line.requires_proof_snapshot ? `${which} (required)` : which;
+  }
+
+  /** §2.14 words this field "File upload (multiple)", so the input takes a
+   * multi-selection and each file is uploaded then attached in turn. The input
+   * is cleared afterwards so picking the same file again still fires a change
+   * event (a browser doesn't re-fire on an identical value). */
   protected uploadProof(line: DeclarationLineRow, event: Event): void {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (!files.length) return;
     this.actionError.set(null);
-    this.fileUpload.upload(file, 'generic').subscribe({
-      next: (uploaded) => {
-        this.http.post(`${environment.apiBaseUrl}/tax-declaration-lines/${line.id}/proofs?file_id=${uploaded.id}`, {}).subscribe({
-          next: () => this.load(),
-          error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to attach this proof.'),
-        });
-      },
-      error: (err) => this.actionError.set(err?.error?.detail ?? 'Failed to upload this file.'),
-    });
+    // Reload once, after the last file settles either way — a failure part
+    // way through still has to repaint, or the proofs that DID attach stay
+    // invisible behind the error banner.
+    let remaining = files.length;
+    const settle = () => {
+      remaining -= 1;
+      if (remaining === 0) this.load();
+    };
+    for (const file of files) {
+      this.fileUpload.upload(file, 'generic').subscribe({
+        next: (uploaded) => {
+          this.http.post(`${environment.apiBaseUrl}/tax-declaration-lines/${line.id}/proofs?file_id=${uploaded.id}`, {}).subscribe({
+            next: () => settle(),
+            error: (err) => {
+              this.actionError.set(err?.error?.detail ?? 'Failed to attach this proof.');
+              settle();
+            },
+          });
+        },
+        error: (err) => {
+          this.actionError.set(err?.error?.detail ?? 'Failed to upload this file.');
+          settle();
+        },
+      });
+    }
   }
 
   protected submitDeclaration(): void {

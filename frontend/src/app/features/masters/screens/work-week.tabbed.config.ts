@@ -3,6 +3,7 @@ import { FieldSection, TabbedScreenConfig } from '../../../shared/screens/screen
 import policies, { SATURDAY_RULE_OPTIONS } from './work-week-policies.list.config';
 import { EXCESS_OPTIONS, MAKEUP_BY_OPTIONS, SHORTFALL_OPTIONS } from './work-week-policies.form.config';
 import payCycles from './pay-cycles.list.config';
+import resolvedPeriods from './resolved-periods.list.config';
 import saturdayOverrides from './saturday-overrides.list.config';
 
 // Masters §3.20 as the prototype renders it (app-screens2.js RECORDS.workweek):
@@ -249,6 +250,13 @@ const config: TabbedScreenConfig<PolicyLike[]> = {
     { key: 'saturdays', label: 'Saturday Overrides', config: saturdayOverrides },
     { key: 'compensation', label: 'Compensation', kind: 'fields', sections: compensationSections },
     { key: 'pay-cycle', label: 'Pay Cycle', config: payCycles },
+    // §3.20c draws Resolved Periods INSIDE the Pay Cycle tab, under the
+    // read-only cycle. A TabDef hosts exactly one config, and Pay Cycle's is
+    // the cycle list with the Replace action on it — so the preview gets its
+    // own tab immediately after, which is the closest this shape expresses.
+    // Its count badge is suppressed: "3" is the spec's fixed preview length,
+    // not a record count, and badging it would read as data volume.
+    { key: 'resolved-periods', label: 'Resolved Periods', config: resolvedPeriods, hideCount: true },
     { key: 'where-used', label: 'Where Used', kind: 'static', sections: WHERE_USED_SECTIONS },
   ],
 };

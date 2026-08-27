@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
-import { badgeClass, humanizeEnum } from '../../../shared/screens/cell-format';
+import { badgeClass, formatDate, humanizeEnum } from '../../../shared/screens/cell-format';
 import { AssetAssignmentHistoryRow, AssetRow } from '../asset.api';
 
 const EMPLOYEE_REF = { endpoint: '/employees/options', labelKey: 'label' };
@@ -153,11 +153,15 @@ const SCREEN = 'asset.directory';
         <div class="card-head"><h3>Assignment History</h3></div>
         <div class="table-wrap">
           <table>
+            <!-- §2.3's own column names, spelled out rather than shortened to
+                 From/To: on a Transfer row those two read as from-employee /
+                 to-employee, which is the one thing this table must not be
+                 ambiguous about. -->
             <thead>
               <tr>
                 <th>Employee</th>
-                <th>From</th>
-                <th>To</th>
+                <th>From Date</th>
+                <th>To Date</th>
                 <th>Action</th>
                 <th>Performed By</th>
                 <th>Reason</th>
@@ -167,8 +171,8 @@ const SCREEN = 'asset.directory';
               @for (h of history(); track h.id) {
                 <tr>
                   <td>{{ refData.label(EMPLOYEE_REF, h.employee_id) }}</td>
-                  <td class="mono">{{ h.from_date }}</td>
-                  <td class="mono">{{ h.to_date ?? '—' }}</td>
+                  <td class="mono">{{ formatDate(h.from_date) }}</td>
+                  <td class="mono">{{ h.to_date ? formatDate(h.to_date) : '—' }}</td>
                   <td><span class="badge-s {{ badgeClass(h.action) }}">{{ humanizeEnum(h.action) }}</span></td>
                   <td class="mono">{{ refData.label(USER_REF, h.performed_by) }}</td>
                   <td>{{ h.reason ?? '—' }}</td>
@@ -197,6 +201,10 @@ export class AssetAssignmentHistoryComponent implements OnInit {
   protected readonly USER_REF = USER_REF;
   protected readonly humanizeEnum = humanizeEnum;
   protected readonly badgeClass = badgeClass;
+  // The two §2.3 date columns were rendering the backend's raw ISO
+  // 'yyyy-mm-dd'; every other date in the app goes through cell-format's
+  // formatDate() to reach the dd-mm-yyyy the prototype shows everywhere.
+  protected readonly formatDate = formatDate;
 
   protected readonly isLoading = signal(true);
   protected readonly asset = signal<AssetRow | null>(null);

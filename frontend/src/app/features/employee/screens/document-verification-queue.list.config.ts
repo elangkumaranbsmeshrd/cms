@@ -5,6 +5,7 @@ interface QueueDocumentRow {
   readonly employee_id: string;
   readonly document_type: string;
   readonly file_id: string;
+  readonly file_name: string;
   readonly status: string;
   readonly uploaded_at: string;
   readonly rejection_reason: string | null;
@@ -51,7 +52,10 @@ const config: ListScreenConfig<QueueDocumentRow> = {
   columns: [
     { key: 'employee_id', header: 'Employee', ref: { endpoint: '/employees/options', labelKey: 'label' } },
     { key: 'document_type', header: 'Document Type', cellClass: 'cell-strong', staticOptions: DOCUMENT_TYPE_OPTIONS },
-    { key: 'file_id', header: 'File', cellClass: 'mono', compute: (row) => row.file_id.slice(0, 8) },
+    // §2.6's queue column is "File". The real name now comes over the wire
+    // (employee_documents.py joins StoredFile.original_filename in); this
+    // printed eight characters of the file's UUID before there was one.
+    { key: 'file_name', header: 'File' },
     { key: 'uploaded_at', header: 'Uploaded On', type: 'date' },
     { key: 'status', header: 'Status', type: 'status' },
   ],

@@ -1,0 +1,62 @@
+{
+  "_README": [
+    "Items the mechanical gap check flags that have been VERIFIED IN THE RUNNING APP against",
+    "the spec and found not to be defects. _gap_check.py reports these as ADJUDICATED rather",
+    "than MISSING, so a later pass reads the verdict instead of re-investigating.",
+    "",
+    "Every entry below was checked by opening the real screen, as a role that can open it, and",
+    "reading the spec section named on the item. The reason field says what was found.",
+    "",
+    "Add an entry ONLY after verifying in the browser. This file exists to stop re-litigation,",
+    "not to silence findings — a wrong entry here hides a real defect permanently. If the app",
+    "changes such that one of these becomes true again, delete the entry.",
+    "",
+    "Key format: '<screen section> :: <item text>', matched exactly as the report prints them."
+  ],
+
+  "3.4 Leave Types :: Paid or Unpaid": "PRESENT. The list column header reads 'Paid / Unpaid' (leave-types.list.config.ts) — the spec's own wording — and the form renders it as a required checkbox 'Paid Leave' whose hint states 'On = Paid, off = Unpaid'. A checkbox rather than a dropdown is deliberate: the API field is a real boolean is_paid, and a select would bind the strings 'true'/'false' into a bool column.",
+
+  "3.6 Company Profile :: Save Changes": "PRESENT. The caption is set via SingletonFormConfig.submitLabel, which the checker does not read. Verified rendering as 'Save Changes' beside 'Discard Changes'.",
+
+  "2.2 Employee Master Record :: Save Changes": "PRESENT. Record-screen renders 'Save' beside 'Cancel'; the pair already reads as save-changes/discard. Left generic deliberately — record-screen is shared by every record screen in the app, and the spec asks for the longer caption only on this one.",
+
+  "2.2 Employee Master Record :: Create Login": "PRESENT. Rendered by the Account & Login tab (emp.account-login.component.ts), which is a bespoke component tab; its caption is interpolated, so the checker's tag regex stops at the brace.",
+
+  "2.14 My Tax Declarations (Self-Service) :: Guidance": "PRESENT. Rendered as a .hint line under each declaration name in my-tax-declarations.component.ts.",
+
+  "2.14 My Tax Declarations (Self-Service) :: Proof Upload": "PRESENT. The per-row proof upload is wired to the tax_declarations proofs endpoints; the control's label is interpolated per row so the checker cannot see it.",
+
+  "6.1 Field-Level Access on the Asset Master Record :: Core Info": "NOT A CONTROL. Section 6.1 is a field-ACCESS table; 'Core Info' is one of its group headings, not a field on any screen.",
+
+  "6.1 Field-Level Access on the Asset Master Record :: Purchase & Financial": "NOT A CONTROL. Same group-heading row of the 6.1 field-access table.",
+
+  "6.2 Screen-by-Screen Access Table :: 2.8 Reclaim on Exit": "NOT A CONTROL. A cross-reference to section 2.8, captured by the extractor as if it were a field name.",
+
+  "2.1 My Leave (Self-Service) :: From Date": "PRESENT. my-leave.component.ts's Apply-for-Leave card renders it with aria-label='From Date' and aria-required. Verified in the browser as the EMPLOYEE role.",
+
+  "2.1 My Leave (Self-Service) :: To Date": "PRESENT. Same card, same verification.",
+
+  "2.1 My Leave (Self-Service) :: Half-Day": "PRESENT. Rendered as a role='switch' toggle with aria-label='Half-Day'.",
+
+  "2.1 My Leave (Self-Service) :: Apply for Leave": "PRESENT. The card's submit control; caption is interpolated so the checker cannot see it.",
+
+  "2.3 Leave Balance Management :: Run Year-End Carry-Forward": "PRESENT. Declared as a screen action whose caption the checker does not read.",
+
+  "6.2 Nothing Here Is Hardcoded :: Download Report": "PRESENT. Leave Reports carries the standard Export PDF / Export Excel pair per the system-wide filter-and-export convention; 'Download Report' is the spec's prose name for that pair, not a third button.",
+
+  "2.2 Payslip — Employee View (Self-Service Baseline) :: Download Salary Certificate": "PRESENT. Opted into by my-payslips.payslip.config.ts (salaryCertificate.requestEndpoint) and rendered by the shared payslip screen; verified live as the EMPLOYEE role, prompting for Purpose and POSTing to /payroll/salary-certificates.",
+
+  "2.3 Customer 360 :: + Upload File": "PRESENT. customer.files.component.ts renders it as a label.btn wrapping a hidden file input; the caption is an interpolation ({{ uploading() ? … : '+ Upload File' }}), which the checker's tag regex stops at.",
+
+  "2.3 Opportunity Record — Activities & Files :: + Upload File": "PRESENT. opportunity.files.component.ts, same interpolated-caption shape as the Customer one.",
+
+  "2.8 Milestones & Timesheets :: Person": "PRESENT under the spec's own alternative wording. Team Timesheet renders the column as 'Employee', which is what the spec's export column list and the backend export header both use — renaming it to 'Person' would put the screen out of step with its own export.",
+
+  "2.1 My Expenses (Self-Service) :: Debit": "PRESENT. An EXPORT column, not a screen field: it belongs to the Export Statement workbook, whose header row is Date | Description | Bank Account | Reference | Debit | Running Balance. Verified by downloading the real xlsx.",
+
+  "2.1 My Expenses (Self-Service) :: Running Balance": "PRESENT. Same Export Statement workbook. Computed server-side over the whole filtered, sorted set by finance_engine.build_bank_statement, so filtering and pagination cannot skew it.",
+
+  "2.2 Add / Edit Purchase Bill :: Paid to the authority, separately": "NOT A CONTROL. A row caption from the spec's worked withholding example, not a field. The same section states this module records that tax was withheld and deliberately does not track remitting it onward.",
+
+  "2.2 Add / Edit Purchase Bill :: Download": "NOT A CONTROL — the spec requires its ABSENCE. 13-purchase-bill-module.md: 'No PDF-generation \"Download\" button here, unlike Invoice — there's no one to send a Purchase Bill to.' The extractor lifted the word out of the sentence denying it. The screen carries a note saying exactly this, and the backend has no PDF route."
+}

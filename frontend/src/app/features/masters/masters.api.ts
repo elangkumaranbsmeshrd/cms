@@ -218,6 +218,12 @@ export interface CompanyProfileRow {
   // every generated invoice/payslip/offer letter.
   logo_file_id: string | null;
   letterhead_file_id: string | null;
+  // §3.6, "New in this revision" — the biometric input-source gate and the
+  // feed reference it makes mandatory once switched on. Off means device
+  // payloads are refused outright, so a profile that has never been told
+  // otherwise must read as false rather than undefined.
+  biometric_attendance: boolean;
+  biometric_device_endpoint: string | null;
 }
 
 export interface CompanyAddressRow {
@@ -292,6 +298,19 @@ export interface PayCycleRow {
   end_day: number | null;
   salary_credit_day: number;
   effective_from: string;
+}
+
+/** §3.20c's Resolved Periods row — "Read-only, derived… Not stored". Every
+ * field here is computed per request by GET /masters/pay-cycles/resolved-
+ * periods from the ACTIVE pay cycle, through the same resolve_pay_period()
+ * Run Payroll pays people by; nothing on this row is a column anywhere. */
+export interface ResolvedPeriodRow {
+  id: string; // 'yyyy-mm' of the payroll month, not a record id
+  payroll_month: string; // 'August 2026' — the month a person asks Run Payroll for
+  period_start: string;
+  period_end: string;
+  salary_credit_date: string;
+  days_in_period: number;
 }
 
 export interface SaturdayOverrideRow {

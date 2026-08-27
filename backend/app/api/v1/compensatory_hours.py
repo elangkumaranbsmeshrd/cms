@@ -35,7 +35,7 @@ from app.models.rbac import Role
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
 from app.rbac.scope import apply_scope
-from app.schemas.leave import CompHoursDecisionRequest, CompHoursRequestCreate, CompHoursRequestOut
+from app.schemas.leave import CompHoursDecisionRequest, CompHoursPreviewOut, CompHoursRequestCreate, CompHoursRequestOut
 from app.services import list_export, org_scope
 from app.services.attendance_engine import SaturdayOverrideSnapshot, WorkWeekPolicySnapshot, resolve_day
 from app.services.leave_engine import estimate_payroll_impact, resolve_routing, validate_comp_hours_request
@@ -115,6 +115,25 @@ async def _resolve_day_type(db: AsyncSession, policy: WorkWeekPolicy, d: date_ty
     return "WORKING_DAY"
 
 
+async def _month_hours_already_used(db: AsyncSession, employee_id: str, make_up_date: date_type) -> Decimal:
+    """§2.6's Monthly Cap Check counts "this request plus every Pending and
+    Approved request whose make-up date falls in the same month". Shared by
+    create and by the preview below, so the figure the applicant is shown
+    while choosing a date and the figure submit enforces cannot drift apart.
+    """
+    month_start = make_up_date.replace(day=1)
+    month_end = make_up_date.replace(day=calendar.monthrange(make_up_date.year, make_up_date.month)[1])
+    rows = (
+        await db.execute(
+            select(CompensatoryHourRequest).where(
+                CompensatoryHourRequest.employee_id == employee_id, CompensatoryHourRequest.status.in_(("PENDING", "APPROVED")),
+                CompensatoryHourRequest.make_up_date >= month_start, CompensatoryHourRequest.make_up_date <= month_end,
+            )
+        )
+    ).scalars().all()
+    return sum((r.hours_to_work for r in rows), Decimal("0"))
+
+
 @router.post("/requests", response_model=CompHoursRequestOut, status_code=status.HTTP_201_CREATED)
 async def request_compensatory_hours(
     body: CompHoursRequestCreate,
@@ -146,17 +165,7 @@ async def request_compensatory_hours(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Hours You Will Work must be at least the {hours_short} hours short")
     hours_to_work = body.hours_to_work
 
-    month_start = body.make_up_date.replace(day=1)
-    month_end = body.make_up_date.replace(day=calendar.monthrange(body.make_up_date.year, body.make_up_date.month)[1])
-    existing = (
-        await db.execute(
-            select(CompensatoryHourRequest).where(
-                CompensatoryHourRequest.employee_id == own_id, CompensatoryHourRequest.status.in_(("PENDING", "APPROVED")),
-                CompensatoryHourRequest.make_up_date >= month_start, CompensatoryHourRequest.make_up_date <= month_end,
-            )
-        )
-    ).scalars().all()
-    month_hours_used = sum((r.hours_to_work for r in existing), Decimal("0"))
+    month_hours_used = await _month_hours_already_used(db, own_id, body.make_up_date)
 
     validation = validate_comp_hours_request(
         shortfall_date=shortfall.attendance_date, make_up_date=body.make_up_date, make_up_day_type=make_up_day_type,
@@ -226,6 +235,57 @@ async def request_compensatory_hours(
         raise _as_client_error(exc, "This attendance record already has an open compensatory hour request") from exc
     await db.refresh(row)
     return row
+
+
+@router.get("/preview", response_model=CompHoursPreviewOut)
+async def preview_compensatory_hours(
+    shortfall_attendance_record_id: str = Query(..., description="The attendance record the make-up is being claimed against"),
+    make_up_date: date_type = Query(...),
+    hours_to_work: Decimal = Query(Decimal("0")),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(SCREEN, action="request")),
+) -> CompHoursPreviewOut:
+    """§2.6's Day Type, Window Check and Monthly Cap Check, answered BEFORE
+    submit. The spec marks all three derived fields ON THE REQUEST FORM, which
+    means the applicant has to be able to READ them while picking a Make-Up
+    Date — meeting them for the first time as a 422 is not the same thing as
+    being shown them. Deliberately the same _resolve_day_type +
+    _month_hours_already_used + validate_comp_hours_request trio
+    request_compensatory_hours itself runs, so this preview can never disagree
+    with what submit will do. Writes nothing.
+    """
+    own_id = await org_scope.get_own_employee_id(db, current_user)
+    if own_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No Employee record is linked to this login")
+    shortfall = await db.get(AttendanceRecord, shortfall_attendance_record_id)
+    # Same "you can only compensate your own hours" check as create — a
+    # preview is a read of someone's attendance record, so it is scoped the
+    # same way rather than more loosely.
+    if shortfall is None or shortfall.employee_id != own_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attendance record not found")
+    policy = await db.get(WorkWeekPolicy, shortfall.work_week_policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="No Work Week Policy covers this attendance record")
+
+    make_up_day_type = await _resolve_day_type(db, policy, make_up_date)
+    month_hours_used = await _month_hours_already_used(db, own_id, make_up_date)
+    validation = validate_comp_hours_request(
+        shortfall_date=shortfall.attendance_date, make_up_date=make_up_date, make_up_day_type=make_up_day_type,
+        compensation_window_days=policy.compensation_window_days or 0, max_comp_hours_per_month=policy.max_comp_hours_per_month,
+        month_hours_already_used=month_hours_used, hours_to_work=hours_to_work,
+        allow_makeup_on_week_off=policy.allow_makeup_on_week_off, allow_makeup_on_mandatory_holiday=policy.allow_makeup_on_mandatory_holiday,
+    )
+    return CompHoursPreviewOut(
+        make_up_day_type=make_up_day_type, day_type_permitted=validation.day_type_permitted,
+        compensation_window_days=policy.compensation_window_days or 0,
+        window_last_permissible_date=validation.window_last_permissible_date, within_window=validation.within_window,
+        # `or None` deliberately: validate_comp_hours_request's own
+        # `if max_comp_hours_per_month:` treats 0 as NO cap, so reporting a
+        # literal 0 here would show the applicant a cap that is not enforced.
+        max_comp_hours_per_month=policy.max_comp_hours_per_month or None, month_hours_already_used=month_hours_used,
+        within_monthly_cap=validation.within_monthly_cap,
+    )
 
 
 @router.get("/requests", response_model=None)

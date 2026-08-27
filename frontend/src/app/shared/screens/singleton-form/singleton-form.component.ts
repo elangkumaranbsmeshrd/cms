@@ -174,7 +174,7 @@ import { FileUploadService } from '../file-upload.service';
           <div class="card-foot">
             <button class="btn ghost" type="button" [disabled]="saving()" (click)="reload()">Discard Changes</button>
             <button class="btn primary" type="button" [disabled]="saving()" (click)="save()">
-              {{ saving() ? 'Saving…' : 'Save' }}
+              {{ saving() ? 'Saving…' : (config().submitLabel ?? 'Save') }}
             </button>
           </div>
         </div>
