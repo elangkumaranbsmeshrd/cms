@@ -29,9 +29,12 @@ const STATUS_OPTIONS = [
  * /timesheets/me, own-scoped. Real and built, despite the original module
  * doc describing this tab as "Coming Soon."
  *
- * Logging a new entry (POST /timesheets) is deliberately not wired here —
- * a real create form given the scope of everything else in this pass;
- * Submit on an existing Draft row is, since it's a bare row action.
+ * Logging a new entry (POST /timesheets) was deliberately not wired here for
+ * one pass — "a real create form given the scope of everything else." The
+ * effect was a self-service screen an employee could read and never write to,
+ * with a working endpoint behind it and nothing calling it. It now routes to
+ * my-timesheets.log.component.ts; that component's own header explains why the
+ * form is a separate route rather than an inline card.
  */
 const config: ListScreenConfig<TimesheetEntryRow> = {
   shape: 'list',
@@ -41,6 +44,29 @@ const config: ListScreenConfig<TimesheetEntryRow> = {
   recordNoun: 'entry',
   description: 'Your own logged hours, task and non-task alike.',
   endpoint: '/timesheets/me',
+  createLabel: 'Log Hours',
+  createRoute: ['/my-projects-tasks', 'timesheets', 'new'],
+  // Gated on VISIBILITY, not on an action — deliberately, and this is why the
+  // create button could not simply be switched on. project.timesheet.mine
+  // registers actions=() (rbac/registry/screens.py), so the default 'edit'
+  // gate is false for every role and would hide the button from everyone.
+  //
+  // Declaring a new 'log' action to satisfy it would invent a permission the
+  // spec does not define. §2.8 is explicit about what the gate actually is:
+  // "the My Timesheet screen is visible to every role (anyone can be staffed
+  // on a project), but visibility is not membership - logging hours against a
+  // project requires actually being that project's Lead or a Member, checked
+  // explicitly on the log endpoint (422 otherwise). Screen access never
+  // substitutes for the per-project team check."
+  //
+  // The server agrees: log_timesheet_entry depends on
+  // require_screen("project.timesheet.mine") with NO action argument, then
+  // re-checks project membership itself. 'open' resolves through
+  // PolicyStore.ALWAYS_ALLOWED to canOpen(), which is that same visibility
+  // check — so client and server gate on identical grounds. The membership
+  // half cannot be known until the projects load, so the form itself says so
+  // rather than the button pretending to know.
+  createScreenAction: 'open',
   exportable: true,
   rowId: (row) => row.id,
   searchParam: false,

@@ -44,6 +44,19 @@ export const employeeRoutes: Routes = [
   },
   screenRoute('employee.documents', 'documents/verification-queue', () => import('./screens/document-verification-queue.list.config')),
   screenRoute('employee.my_tickets', 'my-tickets', () => import('./screens/my-tickets.list.config')),
+  // §2.8's log-hours form, reached from the Timesheets tab's own create
+  // button. A bespoke component rather than a config-driven shape: Task and
+  // the five non-task categories share one control, and the task list depends
+  // on the project picked above it — neither fits FormScreenConfig's flat,
+  // independent-field model. Gated on project.timesheet.mine, the same key the
+  // tab itself uses, NOT employee.my_projects_tasks.
+  {
+    path: 'my-projects-tasks/timesheets/new',
+    pathMatch: 'full',
+    canMatch: [screenAccessGuard('project.timesheet.mine')],
+    data: { screenId: 'project.timesheet.mine', screenPath: 'my-projects-tasks' },
+    loadComponent: () => import('./screens/my-timesheets.log.component').then((m) => m.MyTimesheetsLogComponent),
+  },
   screenRoute('employee.my_projects_tasks', 'my-projects-tasks', () => import('./screens/my-projects-tasks.tabbed.config')),
   {
     path: 'my-assets',
