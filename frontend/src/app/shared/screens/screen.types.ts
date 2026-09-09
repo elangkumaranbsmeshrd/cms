@@ -609,6 +609,14 @@ export interface FormScreenConfig<T = Record<string, unknown>> {
   // Save hidden, exactly like a screen with no updateEndpoint at all. Checked
   // against the loaded formModel once fetched; irrelevant in create mode.
   readonly readOnlyWhen?: (formModel: Partial<T>) => boolean;
+  // Optional narrowing on top of the mode check in FormScreenComponent's
+  // canWrite(). Leave both unset for the normal case: a role whose mode is
+  // 'view' already cannot write, and most screens need nothing more. Set these
+  // only where the write genuinely requires a specific grant beyond being
+  // non-view — Email Configuration's POST needs action 'create', for instance,
+  // so a role with edit-but-not-create must not be offered the Add form.
+  readonly screenAction?: string;
+  readonly createScreenAction?: string;
   // How this record identifies itself in the breadcrumb trail once loaded —
   // "FY 2030–31", not the row's id. Omit to fall back to the bare "Edit"/
   // "View" verb with no name.

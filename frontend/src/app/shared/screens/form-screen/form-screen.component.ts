@@ -49,6 +49,18 @@ let formScreenInstanceSeq = 0;
         <p><b>Couldn't load this record</b></p>
         <p class="hint">{{ loadError() }}</p>
       </div>
+    } @else if (!canWrite() && !isEdit()) {
+      <!-- A create form for a role that cannot create is not a form to render
+           read-only — there is no record to view, and every field would be an
+           empty box the user cannot submit. Say so instead, the same way
+           holidays-import.component.ts already does for its own view-only
+           roles. Reached by typing the /new URL: the list correctly hides its
+           Add button, so nothing in the UI offers this route. -->
+      <div class="empty">
+        <p><b>You have view-only access to {{ config().title }}.</b></p>
+        <p class="hint">Adding a new record here isn't something your role can do.</p>
+        <button class="btn" type="button" (click)="cancel()">Back</button>
+      </div>
     } @else {
       @if (saveError()) {
         <div class="form-error" style="margin: 0 0 14px;">{{ saveError() }}</div>
@@ -301,8 +313,16 @@ let formScreenInstanceSeq = 0;
         </div>
         <div class="card-foot">
           @if (isReadOnlyRecord()) {
+            <!-- Two different reasons land here and they are not interchangeable.
+                 "You may not change this" and "this particular record is frozen"
+                 lead a user to do completely different things next, so the hint
+                 says which one applies rather than picking one wording for both. -->
             <span class="hint" style="margin-right: auto;">
-              Nothing on this record can be changed here — its status moves through the list's own actions instead.
+              @if (!canWrite()) {
+                You have view-only access to {{ config().title }}, so nothing here can be changed.
+              } @else {
+                Nothing on this record can be changed here — its status moves through the list's own actions instead.
+              }
             </span>
             <button class="btn ghost" type="button" (click)="cancel()">Close</button>
           } @else {
@@ -639,7 +659,49 @@ export class FormScreenComponent<T = any> {
    * a LOCKED year must still read as "View" (Invariant 4), same UI, same
    * reasoning, just triggered by the loaded record's own state instead of
    * the screen's shape. */
+  /** Does this role actually hold the write action on this screen?
+   *
+   * This used to be unasked, and it was the gap behind a whole class of dead
+   * end: screenRoute()'s guard checks only VISIBILITY (PolicyStore.canOpen),
+   * so a role with 'view' on a screen was correctly shown a list with no Add
+   * button and a Read-only badge — and could still reach that screen's /new
+   * and /:id/edit URLs directly and get a fully editable form. Every field
+   * enabled, Save enabled. The server refused the write with a 403, so the
+   * only feedback came after filling the whole form.
+   *
+   * Checked here rather than in the route guard because canMatch runs before
+   * the config resolves, so the guard cannot know whether a given route is a
+   * list or a form, nor which action that form needs. Putting it in the
+   * component means every form screen in every module is covered by
+   * construction — including any route someone forgets to annotate later.
+   *
+   * The pattern this restores already existed twice in Masters alone
+   * (holidays-import.component.ts and tax-head-child-screen.component.ts both
+   * render a view-only state for a role without the action); it simply was
+   * never applied to the generic form path.
+   *
+   * Gated on the screen MODE, not on a specific action verb, and that
+   * distinction matters. A bare can(id, 'edit') looks like the obvious check
+   * and is wrong: ticket.list declares no 'edit' action at all — its actions
+   * are create/reassign/close — so an action check would report the Ticket
+   * form read-only for Super Admin. isReadOnly() asks the question the spec
+   * actually asks ("View — can open the section and read the list, but change
+   * nothing", §3.0), is mode-based, and therefore holds for every screen
+   * regardless of which verbs it happens to register. It is also already what
+   * list-screen uses to decide its own Read-only badge, so the list and the
+   * form it links to can no longer disagree.
+   *
+   * A screen can still narrow this further with screenAction when its write
+   * genuinely needs a specific grant. */
+  protected canWrite(): boolean {
+    const cfg = this.config();
+    if (this.policy.isReadOnly(cfg.id)) return false;
+    const action = this.isEdit() ? cfg.screenAction : (cfg.createScreenAction ?? cfg.screenAction);
+    return action ? this.policy.can(cfg.id, action) : true;
+  }
+
   protected isReadOnlyRecord(): boolean {
+    if (!this.canWrite()) return true;
     if (!this.isEdit()) return false;
     if (!this.config().updateEndpoint) return true;
     return this.config().readOnlyWhen?.(this.formModel as Partial<T>) ?? false;
