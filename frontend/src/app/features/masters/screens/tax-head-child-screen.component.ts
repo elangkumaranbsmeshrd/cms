@@ -35,6 +35,16 @@ import { taxHeadWriteBody } from './taxes.list.config';
  * for that one array — functionally identical to editing it inline, just a
  * different page.
  */
+/** The one column on these three screens whose editable value is NOT the
+ * column the API stores. Split Components' Condition is a `condition_rule`
+ * JSON object server-side ({description: '…'} — §3.2c's "simple comparison,
+ * not a rule builder"), and ArrayColumnConfig can only bind a plain scalar,
+ * so taxes.split-components.config.ts binds `condition_text` and this
+ * component mirrors the two around the request. Named here rather than
+ * hardcoded at each use so the pairing is stated once. */
+const CONDITION_TEXT_COLUMN = 'condition_text';
+const CONDITION_RULE_COLUMN = 'condition_rule';
+
 @Component({
   selector: 'app-tax-head-child-screen',
   standalone: true,
@@ -172,7 +182,7 @@ export class TaxHeadChildScreenComponent {
           // one other array TaxHeadRow carries) — but `keyof TaxHeadRow`
           // itself doesn't encode that narrower guarantee, hence the cast.
           const arr = (row as unknown as Record<string, unknown>)[this.config().key] as Record<string, unknown>[] | undefined;
-          this.items.set(Array.isArray(arr) ? structuredClone(arr) : []);
+          this.items.set(Array.isArray(arr) ? structuredClone(arr).map((item) => this.hydrate(item)) : []);
         }
         this.isLoading.set(false);
       },
@@ -185,6 +195,31 @@ export class TaxHeadChildScreenComponent {
 
   protected canEdit(): boolean {
     return this.policy.can('masters.taxes', 'edit');
+  }
+
+  /** Loaded row -> what the table edits: unwrap condition_rule's description
+   * into the bound `condition_text` cell. Without this an existing
+   * conditional split component showed an EMPTY Condition, since the server
+   * never sends a condition_text at all. No-op on the two screens whose
+   * config declares no such column. */
+  private hydrate(item: Record<string, unknown>): Record<string, unknown> {
+    if (!this.hasConditionColumn()) return item;
+    const rule = item[CONDITION_RULE_COLUMN] as { description?: unknown } | null | undefined;
+    return { ...item, [CONDITION_TEXT_COLUMN]: rule?.description == null ? '' : String(rule.description) };
+  }
+
+  /** The reverse, applied to every row on the way out: what was typed into
+   * the Condition cell becomes the condition_rule the API stores. Rebuilt
+   * from the text on EVERY save (not only on rows added this session), which
+   * is what makes editing an existing condition actually persist. */
+  private dehydrate(item: Record<string, unknown>): Record<string, unknown> {
+    if (!this.hasConditionColumn()) return item;
+    const text = String(item[CONDITION_TEXT_COLUMN] ?? '').trim();
+    return { ...item, [CONDITION_RULE_COLUMN]: text ? { description: text } : null };
+  }
+
+  private hasConditionColumn(): boolean {
+    return this.config().columns.some((c) => c.key === CONDITION_TEXT_COLUMN);
   }
 
   protected addRow(): void {
@@ -200,7 +235,7 @@ export class TaxHeadChildScreenComponent {
     if (!head) return;
     this.saving.set(true);
     this.saveError.set(null);
-    const body = { ...taxHeadWriteBody(head), [this.config().key]: this.items() };
+    const body = { ...taxHeadWriteBody(head), [this.config().key]: this.items().map((item) => this.dehydrate(item)) };
     this.http.put(`${environment.apiBaseUrl}/masters/taxes/${head.id}`, body).subscribe({
       next: () => {
         this.saving.set(false);

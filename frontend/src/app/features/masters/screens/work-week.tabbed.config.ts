@@ -4,7 +4,7 @@ import policies, { SATURDAY_RULE_OPTIONS } from './work-week-policies.list.confi
 import { EXCESS_OPTIONS, MAKEUP_BY_OPTIONS, SHORTFALL_OPTIONS } from './work-week-policies.form.config';
 import payCycles from './pay-cycles.list.config';
 import resolvedPeriods from './resolved-periods.list.config';
-import saturdayOverrides from './saturday-overrides.list.config';
+import saturdayCalendar from './saturday-calendar.list.config';
 
 // Masters §3.20 as the prototype renders it (app-screens2.js RECORDS.workweek):
 // one record with summary tiles and tabs. Policies, Pay Cycle and Saturday
@@ -102,18 +102,88 @@ function dailyHoursSections(row: Record<string, unknown> | null): readonly Field
         },
       ],
     },
+    ...hourBandSections(p),
   ];
 }
 
-// KNOWN GAP, deliberately not built here — the prototype's Daily Hours tab
-// also carries an "Hour Bands → Day Status" sub-table (app-screens2.js:
-// 482-491: Full Day / Half Day / Absent boundaries, what each is paid as,
-// what's deducted). 01-masters-module.md §3.20's own Implementation status
-// explicitly defers this exact band-boundary arithmetic to Payroll (Module
-// 6) — it isn't a stored WorkWeekPolicyRow field like everything else on
-// this tab, it's a calculation Payroll owns. Add it once Payroll exists and
-// exposes it, as a second FieldSection (or a genuine list-shape embed if it
-// ends up backed by a real endpoint) — not guessed at here.
+/** §3.20 Screen Design, Daily Hours: "a read-only **hour-band table** showing
+ * how worked hours become a payable day: Full Day at or above the target,
+ * Full Day (grace) inside the grace window, Half Day from the half-day
+ * threshold up to the target, Absent below it. Each band shows what it is
+ * Paid As and what it deducts. This table is what makes the rule auditable —
+ * it is the difference between 'the system decided' and 'here is the band it
+ * fell into.'"
+ *
+ * The boundaries are NOT a second implementation of the rule: they are read
+ * straight off the same three policy fields Payroll's own resolver branches
+ * on, in the same order it branches in (app/services/attendance_engine.py's
+ * resolve_hours — FULL_DAY, then FULL_DAY_GRACE, then HALF_DAY, then ABSENT;
+ * APPENDIX-B "DAY-STATUS BAND RESOLUTION" states the same four bands). So a
+ * policy change moves this table the same afternoon it moves everybody's pay,
+ * and nothing here is a constant: a Grace Window of 0 removes the grace band
+ * outright ("0 switches grace off"), and a policy with no Half Day Threshold
+ * has no Half Day band at all — the day is Full Day or Absent.
+ *
+ * Rendered as a field grid rather than the prototype's six-column mini-table
+ * because FieldGridComponent (the only renderer a 'fields' tab has) draws
+ * label/value pairs, not tables — so each band is one row reading
+ * "range · paid as · deduction".
+ */
+function hourBandSections(p: PolicyLike | null): readonly FieldSection<Record<string, unknown>>[] {
+  if (!p) return [];
+  const net = Number(p.net_working_hours_per_day);
+  if (!Number.isFinite(net) || net <= 0) return [];
+
+  const graceHours = Number(p.grace_window_minutes ?? 0) / 60;
+  const threshold = p.half_day_threshold_hours == null ? null : Number(p.half_day_threshold_hours);
+  // The floor of the full-day band once grace is applied — the figure every
+  // band below it is measured against.
+  const fullDayFloor = graceHours > 0 ? net - graceHours : net;
+  const shortfall = optionLabel(SHORTFALL_OPTIONS, p.uncompensated_shortfall_becomes);
+  // §3.20's core rule: a shortfall only reaches the payslip if it was never
+  // made up, and whether it may be made up at all is the policy's own toggle.
+  const madeUp = p.allow_compensatory_hours
+    ? `; nothing is deducted if the hours are made up within the compensation window`
+    : `; this policy does not allow compensatory hours, so the shortfall cannot be made up`;
+  // The prototype prints each band's upper bound one hundredth below the next
+  // band's floor (7.99 / 7.74 / 3.99) rather than an open interval, which is
+  // how a person reads a band table.
+  const just = (v: number) => `${(v - 0.01).toFixed(2)} h`;
+
+  const bands: { key: string; label: string; value: string }[] = [
+    {
+      key: 'band_full',
+      label: 'Full Day',
+      value: `${net.toFixed(2)} h and above · paid 1.00 day · no deduction — the net target was met in full`,
+    },
+  ];
+  if (graceHours > 0) {
+    bands.push({
+      key: 'band_full_grace',
+      label: 'Full Day — grace',
+      value: `${fullDayFloor.toFixed(2)} h to ${just(net)} · paid 1.00 day · no deduction — inside the ${minutes(p.grace_window_minutes)} grace window configured on this policy`,
+    });
+  }
+  if (threshold != null && threshold < fullDayFloor) {
+    bands.push({
+      key: 'band_half',
+      label: 'Half Day',
+      value: `${threshold.toFixed(2)} h to ${just(fullDayFloor)} · paid 0.50 day · deducts half a day${madeUp}`,
+    });
+  }
+  bands.push({
+    key: 'band_absent',
+    label: 'Absent',
+    value: `Below ${(threshold != null && threshold < fullDayFloor ? threshold : fullDayFloor).toFixed(2)} h · paid 0.00 day · the whole day is a shortfall, converted by "${shortfall}"${madeUp}`,
+  });
+
+  return [
+    {
+      title: 'Hour Bands → Day Status',
+      fields: bands.map((b) => ({ key: b.key, label: b.label, span: 2 as const, compute: () => b.value })),
+    },
+  ];
+}
 
 /** §4 — the Compensation tab. app-screens2.js:516-528's rule-summary half is
  * the same "already on WorkWeekPolicyRow, just re-displayed" shape as Daily
@@ -241,13 +311,22 @@ const config: TabbedScreenConfig<PolicyLike[]> = {
   // Cycle, Where Used. BUILT — MASTERS-COMPLETION-PROMPT.md §4. Daily Hours
   // and Compensation are 'fields' tabs reading the active policy off this
   // screen's own headerEndpoint (dailyHoursSections/compensationSections
-  // above); Where Used is a 'static' tab (WHERE_USED_SECTIONS above). Two
-  // sub-tables remain deliberately unbuilt — see the KNOWN GAP comments
-  // above dailyHoursSections and compensationSections for why.
+  // above); Where Used is a 'static' tab (WHERE_USED_SECTIONS above). Daily
+  // Hours' own "Hour Bands → Day Status" sub-table is built too
+  // (hourBandSections above). ONE sub-table remains unbuilt — the
+  // Compensation tab's "Open Compensatory Requests" mini-table; see the KNOWN
+  // GAP comment above compensationSections for why.
   tabs: [
-    { key: 'policies', label: 'Policies', config: policies },
+    // Tab labels are §3.20 Screen Design's own words, not paraphrases: it
+    // names the first tab "Work Week Policies" and the third "Saturday
+    // Calendar". The third one used to be the manual override rows under the
+    // honest label "Saturday Overrides", because no endpoint resolved the
+    // year; GET /masters/work-week-policies/saturday-calendar does now, so
+    // this is the real fifty-two-row calendar, with every override visible in
+    // it as the Saturday whose Actually disagrees with Pattern Says.
+    { key: 'policies', label: 'Work Week Policies', config: policies },
     { key: 'daily-hours', label: 'Daily Hours', kind: 'fields', sections: dailyHoursSections },
-    { key: 'saturdays', label: 'Saturday Overrides', config: saturdayOverrides },
+    { key: 'saturdays', label: 'Saturday Calendar', config: saturdayCalendar },
     { key: 'compensation', label: 'Compensation', kind: 'fields', sections: compensationSections },
     { key: 'pay-cycle', label: 'Pay Cycle', config: payCycles },
     // §3.20c draws Resolved Periods INSIDE the Pay Cycle tab, under the

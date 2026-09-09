@@ -2,7 +2,8 @@
  * Layer 4 (COMPLETE-TEST-PROMPT.md §"Per-screen logic"):
  *   Tax Head form — **every `visibleWhen` branch**: each Tax Type revealing the
  *   right rate fields, the onward-liability toggle revealing its six,
- *   withholding scope revealing direction/base/certificate.
+ *   withholding scope revealing direction and base, and the received-payments
+ *   direction revealing the certificate.
  *
  * Why this config gets its own spec rather than being folded into the
  * form-screen one: `visibleWhen` is not merely which inputs are drawn. A field
@@ -83,9 +84,16 @@ const ONWARD_FIELDS: readonly string[] = [
   'authority_reference_label',
 ];
 
-/** Direction / base / certificate — the three the withholding scope reveals. */
-const WITHHOLDING_FIELDS: readonly string[] = ['withholding_directions', 'default_calculated_on', 'certificate_expected'];
+/** Direction and base — the two the withholding SCOPE alone reveals. */
+const WITHHOLDING_FIELDS: readonly string[] = ['withholding_directions', 'default_calculated_on'];
+/** §3.2a words Certificate Expected narrower than the other two: "Conditional
+ * — shown when Direction includes On Payments Received". A head that only
+ * withholds on payments the company MAKES has no counterparty to issue it a
+ * certificate, so the scope alone must NOT reveal this one. */
+const CERTIFICATE_FIELDS: readonly string[] = ['certificate_expected'];
 const WITHHOLDING_SCOPE = 'WITHHOLDING_AT_SOURCE';
+const ON_PAYMENTS_RECEIVED = 'ON_PAYMENTS_RECEIVED';
+const ON_PAYMENTS_MADE = 'ON_PAYMENTS_MADE';
 
 /** The only two scopes a "which regime" choice is meaningful for. */
 const SCHEME_FIELDS: readonly string[] = ['tax_scheme_id'];
@@ -171,6 +179,42 @@ const COMBINED_CASES: readonly Case[] = TAX_TYPES.map((taxType) => ({
   extra: [...rateFieldsFor(taxType), ...WITHHOLDING_FIELDS, ...ONWARD_FIELDS],
 }));
 
+/** Certificate Expected's own gate, which the withholding scope alone does not
+ * open — §3.2a: "shown when Direction includes On Payments Received". */
+const CERTIFICATE_CASES: readonly Case[] = [
+  {
+    name: 'withholding head with no direction chosen yet',
+    model: model({ scope: WITHHOLDING_SCOPE, tax_type: 'PERCENTAGE', withholding_directions: [] }),
+    extra: ['rate_pct', ...WITHHOLDING_FIELDS],
+  },
+  {
+    name: 'withholding on payments MADE only',
+    model: model({ scope: WITHHOLDING_SCOPE, tax_type: 'PERCENTAGE', withholding_directions: [ON_PAYMENTS_MADE] }),
+    extra: ['rate_pct', ...WITHHOLDING_FIELDS],
+  },
+  {
+    name: 'withholding on payments RECEIVED',
+    model: model({ scope: WITHHOLDING_SCOPE, tax_type: 'PERCENTAGE', withholding_directions: [ON_PAYMENTS_RECEIVED] }),
+    extra: ['rate_pct', ...WITHHOLDING_FIELDS, ...CERTIFICATE_FIELDS],
+  },
+  {
+    name: 'withholding in both directions',
+    model: model({
+      scope: WITHHOLDING_SCOPE,
+      tax_type: 'PERCENTAGE',
+      withholding_directions: [ON_PAYMENTS_MADE, ON_PAYMENTS_RECEIVED],
+    }),
+    extra: ['rate_pct', ...WITHHOLDING_FIELDS, ...CERTIFICATE_FIELDS],
+  },
+  {
+    // A direction left behind by an earlier scope choice must not leak the
+    // certificate onto a billing head — the scope half of the gate still holds.
+    name: 'a stray received-direction on a billing head',
+    model: model({ scope: 'SALES_BILLING', tax_type: 'PERCENTAGE', withholding_directions: [ON_PAYMENTS_RECEIVED] }),
+    extra: ['rate_pct'],
+  },
+];
+
 const SCHEME_PLUS_ONWARD_CASE: Case = {
   name: 'declaration cap on a payroll income tax head with onward liability',
   model: model({ tax_type: 'DECLARATION_CAP', scope: 'PAYROLL_INCOME_TAX', creates_onward_liability: true }),
@@ -185,6 +229,7 @@ const ALL_CASES: readonly Case[] = [
   ...ONWARD_CASES,
   ...ONWARD_ON_EVERY_SCOPE,
   ...COMBINED_CASES,
+  ...CERTIFICATE_CASES,
   SCHEME_PLUS_ONWARD_CASE,
 ];
 
@@ -244,7 +289,7 @@ describe('taxes.form.config — Tax Head progressive disclosure', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Scope -> tax scheme, and withholding's three
+  // Scope -> tax scheme, and the withholding fields
   // -------------------------------------------------------------------------
   describe('scope gates', () => {
     for (const c of SCOPE_CASES) {
@@ -253,22 +298,30 @@ describe('taxes.form.config — Tax Head progressive disclosure', () => {
       });
     }
 
-    it('reveals direction, base and certificate together — all three, never a subset', () => {
+    it('reveals direction and base together — both, never a subset', () => {
       const shown = visibleKeys(model({ scope: WITHHOLDING_SCOPE, tax_type: 'PERCENTAGE', creates_onward_liability: false }));
       for (const key of WITHHOLDING_FIELDS) {
         expect(shown).withContext(`${key} on the withholding scope`).toContain(key);
       }
-      expect(WITHHOLDING_FIELDS.length).toBe(3);
+      expect(WITHHOLDING_FIELDS.length).toBe(2);
     });
 
-    it('reveals the withholding three on no other scope', () => {
+    it('reveals the withholding fields on no other scope', () => {
       for (const scope of SCOPES.filter((s) => s !== WITHHOLDING_SCOPE)) {
         const shown = visibleKeys(model({ scope, tax_type: 'PERCENTAGE', creates_onward_liability: false }));
-        for (const key of WITHHOLDING_FIELDS) {
+        for (const key of [...WITHHOLDING_FIELDS, ...CERTIFICATE_FIELDS]) {
           expect(shown).withContext(`${key} leaking onto scope=${scope}`).not.toContain(key);
         }
       }
     });
+
+    // §3.2a: Certificate Expected is the one withholding field the scope alone
+    // does not open — it needs the direction as well.
+    for (const c of CERTIFICATE_CASES) {
+      it(`Certificate Expected — ${c.name}`, () => {
+        expectExactlyVisible(c);
+      });
+    }
 
     it('reveals Tax Scheme on the payroll income tax and declaration scopes only', () => {
       for (const scope of SCOPES) {
@@ -343,7 +396,13 @@ describe('taxes.form.config — Tax Head progressive disclosure', () => {
   // -------------------------------------------------------------------------
   describe('coverage of every visibleWhen branch', () => {
     it('has a case naming every field that carries a visibleWhen', () => {
-      const covered = new Set<string>([...ALL_RATE_FIELDS, ...SCHEME_FIELDS, ...WITHHOLDING_FIELDS, ...ONWARD_FIELDS]);
+      const covered = new Set<string>([
+        ...ALL_RATE_FIELDS,
+        ...SCHEME_FIELDS,
+        ...WITHHOLDING_FIELDS,
+        ...CERTIFICATE_FIELDS,
+        ...ONWARD_FIELDS,
+      ]);
       const uncovered = GATED_KEYS.filter((k) => !covered.has(k));
       expect(uncovered).withContext('gated fields with no case in this spec').toEqual([]);
 

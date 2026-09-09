@@ -199,6 +199,15 @@ class CompanyProfileWrite(BaseModel):
     website: str | None = None
     logo_file_id: str | None = None
     letterhead_file_id: str | None = None
+    # Masters §3.6d's fourth upload section, "Invoice Template | File Upload
+    # (single) | The layout file the Invoice module uses to generate invoice
+    # PDFs". The column has existed since 0002_masters.py (and file_access.py
+    # already publishes it org-wide alongside the logo and letterhead, because
+    # every generated invoice embeds it), but it was never on this write
+    # schema — so nothing in the system could set or read it and
+    # invoices.download_invoice_pdf's own "the invoice template set in Company
+    # Profile" was pointing at a field no screen could fill.
+    invoice_template_file_id: str | None = None
     default_billing_tax_head_id: str | None = None
     payroll_basis: str = "HOUR_BASIS"  # HOUR_BASIS | DAY_BASIS — A121; only HOUR_BASIS is implemented
     # Masters §3.6, "New in this revision". Defaults Off: the spec defines Off

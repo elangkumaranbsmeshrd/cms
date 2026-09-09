@@ -25,9 +25,11 @@ const config: FormScreenConfig<DesignationRow> = {
       required: true,
       span: 2,
       placeholder: 'e.g. Software Engineer, UI/UX Designer, Project Manager, HR Executive',
-      // §3.10 asks for uniqueness; designations.name carries no UNIQUE index in
-      // the schema, so this is the spec's rule stated to the user rather than a
-      // constraint the database will enforce.
+      // §3.10 asks for uniqueness, and the schema now enforces it —
+      // ux_designations_name, added by migration 0011 alongside the `code`
+      // column. (The note that used to sit here said the opposite; it predated
+      // that migration.) A clash comes back as a 409 the form banner shows, so
+      // the hint warns first.
       hint: 'Must be unique',
     },
     {

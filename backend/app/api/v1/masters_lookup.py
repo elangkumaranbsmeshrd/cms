@@ -33,9 +33,10 @@ case bolted onto this factory:
     across that sub-master's name and code fields") requires alongside `name`
     but which the single-column default silently left unsearched. PDF/Excel
     export (Phase 6) is now wired for every sub-master too, ONCE, in
-    `list_rows` itself — see the docstring note below. Used/Unused and
-    Created By/Modified By/date-range filters are still deliberately NOT
-    implemented here.
+    `list_rows` itself — see the docstring note below. Used/Unused is now
+    built as well, per-registration, via `referenced_by`; Created By / Last
+    Modified By / Created On range are built unconditionally, since every
+    model here carries AuditMixin and so needs no opt-in (see `list_rows`).
   - `before_write` — an async hook run just before a create/update commits,
     given the incoming data dict, the db session, and the existing row (None
     on create). It can validate (raise HTTPException) or inject server-
@@ -47,11 +48,14 @@ audit): Masters §3.0 asks for Search, Status, Used/Unused, Created By/Last
 Modified By/Created On range filters, and PDF/Excel export identically on
 every one of the ~19 sub-master lists — and BUILD-PROMPT §7 calls this same
 contract out again for ~51 list screens system-wide ("build the contract
-ONCE; every list inherits it"). Search and the Status filter are implemented
-here now because they're cheap and immediately useful. Used/Unused needs
-real cross-module reference data most of these lookups don't have yet
-(Employee, Invoice, Purchase Bill, etc. aren't built until later phases) and
-is still deferred. PDF/Excel export (Phase 6) IS now wired here, ONCE, in
+ONCE; every list inherits it"). Search and the Status filter were implemented
+here first because they're cheap and immediately useful. Used/Unused needed
+cross-module reference data most of these lookups did not have while the
+consuming modules were unbuilt — it landed later, as `referenced_by`. Created
+By / Last Modified By / Created On range (A048) landed last, in `list_rows`
+below: the columns they read come from AuditMixin, which every model this
+factory serves already has, so the only thing that was ever missing was the
+four query params. PDF/Excel export (Phase 6) IS now wired here, ONCE, in
 `build_lookup_router` itself — every sub-master generated from this factory
 gets `?format=pdf|excel` on its list endpoint for free, via the same
 `list_export.build_export` contract every other list screen in the system
@@ -64,6 +68,7 @@ import logging
 import types as _types
 import typing
 import uuid
+from datetime import date, timedelta
 from typing import Annotated, Any, Awaitable, Callable, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -369,6 +374,10 @@ def build_lookup_router(
         search: str | None = Query(None, description="Case-insensitive substring match on the identifying field"),
         include_inactive: bool = Query(False, description="Masters §3.0: defaults to Active only"),
         is_referenced: bool | None = Query(None, description="Masters §3.0's Used/Unused filter — omit for both"),
+        created_by: str | None = Query(None, description="Masters §3.0's Created By filter — a users.id"),
+        updated_by: str | None = Query(None, description="Masters §3.0's Last Modified By filter — a users.id"),
+        created_from: date | None = Query(None, description="Masters §3.0's Created On range, inclusive"),
+        created_to: date | None = Query(None, description="Masters §3.0's Created On range, inclusive"),
         format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
     ) -> list | Response:
         stmt = select(model)
@@ -380,6 +389,21 @@ def build_lookup_router(
             # passes the plain string it always has.
             search_columns = [search_field] if isinstance(search_field, str) else search_field
             stmt = stmt.where(or_(*(getattr(model, col).ilike(f"%{search}%") for col in search_columns)))
+        # §3.0's "Created By, Last Modified By, and Created On range" half of
+        # the Filter & Export convention (Appendix A, A048). Every model this
+        # factory serves carries AuditMixin, so these four need no per-entity
+        # opt-in and no migration — the columns are already there on all 15.
+        # Same shape customers.py:212-225 already uses, so a caller writes the
+        # same params against a lookup as against any other list: `created_to`
+        # is INCLUSIVE, hence the < next-day comparison against a DATETIME.
+        if created_by:
+            stmt = stmt.where(model.created_by == created_by)
+        if updated_by:
+            stmt = stmt.where(model.updated_by == updated_by)
+        if created_from:
+            stmt = stmt.where(model.created_at >= created_from)
+        if created_to:
+            stmt = stmt.where(model.created_at < created_to + timedelta(days=1))
         rows = (await db.execute(stmt)).scalars().all()
 
         referenced_ids = await _referenced_ids(db, referenced_by) if tracks_references else set()
@@ -399,7 +423,15 @@ def build_lookup_router(
                 }
                 for row in rows
             ]
-            filters_applied = {"search": search, "include_inactive": include_inactive, **({"is_referenced": is_referenced} if tracks_references else {})}
+            filters_applied = {
+                "search": search, "include_inactive": include_inactive,
+                **({"is_referenced": is_referenced} if tracks_references else {}),
+                # Named in the PDF/Excel header block only when actually set —
+                # list_export drops empty values, so an unfiltered export does
+                # not grow four "None" lines it never had.
+                "created_by": created_by, "updated_by": updated_by,
+                "created_from": created_from, "created_to": created_to,
+            }
             return await list_export.build_export(format, db, current_user, _export_title, _export_columns, export_rows, filters_applied)
 
         # RBAC §3.2 Layer 3, enforced at the serialization boundary (ARCH-2

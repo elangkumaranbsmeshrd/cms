@@ -56,12 +56,12 @@ const config: ListScreenConfig<UnitOfMeasureRow> = {
   // §3.0 rule 1 — Deactivate and Delete are Super Admin only, both gated on the
   // 'delete' action the API's own require_screen check uses.
   //
-  // QUEUED — see this group's audit report: masters_lookup.py's factory has no
-  // reverse of POST /{id}/deactivate, so a deactivated unit can never come back
-  // via this UI even though §3.13's own Fields Table lists Status as a normal
-  // editable toggle. This button targets the endpoint that reversal needs
-  // (POST /{id}/activate) ahead of the backend adding it — inert (404) until it
-  // does, same pattern this session used for Financial Year's End Date.
+  // Activate is no longer the queued, inert button it was when this comment
+  // was first written: masters_lookup.py's factory has carried the mirror
+  // POST /{id}/activate since the §4.3 audit round, and the full
+  // create -> Deactivate -> Activate -> delete cycle was driven through this
+  // screen live. §3.13's Fields Table calls Status a toggle, and both halves
+  // of it are real.
   rowActions: [
     {
       label: 'Activate',

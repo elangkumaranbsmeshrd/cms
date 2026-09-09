@@ -1,9 +1,28 @@
-import { ListScreenConfig } from '../../../shared/screens/screen.types';
+import { FilterOption, ListScreenConfig } from '../../../shared/screens/screen.types';
+import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { CustomerSourceRow } from '../masters.api';
 
-// masters_lookup.py's factory: search / include_inactive / format are the only
-// query params, and masters_simple.py:228-233 declares fields={"name": ...}
-// only, so the response row is {id, is_active, name}.
+// §3.0's Created By / Last Modified By pair — see
+// service-categories.list.config.ts for why the options are derived from the
+// rows on screen rather than from an endpoint of their own.
+const USER_REF = { endpoint: '/users', labelKey: 'name' };
+
+function peopleOptions(key: 'created_by' | 'updated_by') {
+  return (rows: readonly CustomerSourceRow[], refData: RefDataService): FilterOption[] => {
+    const seen = new Map<string, FilterOption>();
+    for (const row of rows) {
+      const id = row[key];
+      if (id && !seen.has(id)) seen.set(id, { value: id, label: refData.label(USER_REF, id) });
+    }
+    return [...seen.values()];
+  };
+}
+
+// masters_lookup.py's factory: the query params this endpoint takes are
+// search, include_inactive, is_referenced, created_by, updated_by,
+// created_from/created_to and format — §3.0's filter convention in full. The
+// row's business fields are {name, code} (masters_simple.py's registration);
+// §3.16's own Fields Table lists no others.
 //
 // The prototype's Status filter is the shared "Show inactive" control that
 // `includeInactiveParam` turns on, not a second Status <select> (see
@@ -41,6 +60,12 @@ const config: ListScreenConfig<CustomerSourceRow> = {
       param: 'is_referenced',
       allLabel: 'Used — Any',
     },
+    // §3.0 / A048's third cross-cutting rule, on every sub-master list:
+    // "Created By, Last Modified By, and Created On range". Server transport,
+    // so the export header names them and exports exactly what is on screen.
+    { key: 'created_at', label: 'Created On', kind: 'daterange', transport: 'server', param: 'created' },
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', optionsFromRows: peopleOptions('created_by') },
+    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', optionsFromRows: peopleOptions('updated_by') },
   ],
   columns: [
     { key: 'name', header: 'Customer Source', cellClass: 'cell-strong' },
@@ -51,12 +76,12 @@ const config: ListScreenConfig<CustomerSourceRow> = {
   // §3.0 rule 1 — Deactivate and Delete are Super Admin only. The prototype's
   // own form hint for this sub-master says the same thing in as many words:
   // "Deactivation is Super Admin only, as on every sub-master".
-  // QUEUED — see this group's audit report: masters_lookup.py's factory has no
-  // reverse of POST /{id}/deactivate, so a deactivated source can never come
-  // back via this UI even though §3.16's own Fields Table lists Status as a
-  // normal editable toggle. This button targets the endpoint that reversal
-  // needs (POST /{id}/activate) ahead of the backend adding it — inert (404)
-  // until it does, same pattern this session used for Financial Year's End Date.
+  //
+  // Activate is the other half of §3.16's "Status: Toggle (Active/Inactive)".
+  // It was written against a POST /{id}/activate the factory did not have
+  // yet; masters_lookup.py has since grown it, so this is a live action now,
+  // not the inert stub the note that used to sit here described (verified in
+  // the browser).
   rowActions: [
     {
       label: 'Activate',

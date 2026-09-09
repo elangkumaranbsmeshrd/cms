@@ -82,6 +82,18 @@ const whenOnwardLiability = (form: Record<string, unknown>) => !!form['creates_o
 
 const whenWithholdingScope = (form: Record<string, unknown>) => form['scope'] === 'WITHHOLDING_AT_SOURCE';
 
+// §3.2a: Certificate Expected is "Conditional — shown when Direction includes
+// On Payments Received", which is narrower than the withholding scope itself
+// — a head that only withholds on payments the company MAKES has no
+// counterparty to issue it a certificate. The direction is a real control on
+// this form (`withholding_directions` below, a checkgroup whose model is a
+// string[]), so the gate is the spec's own condition rather than the scope
+// standing in for it.
+const whenWithheldOnPaymentsReceived = (form: Record<string, unknown>) => {
+  const directions = form['withholding_directions'];
+  return whenWithholdingScope(form) && Array.isArray(directions) && directions.includes('ON_PAYMENTS_RECEIVED');
+};
+
 // §6b fix #4 / ARCH-1-database-schema.md:588 ("Only meaningful on
 // payroll/declaration scopes") — Tax Scheme is not one of the prototype's 23
 // fields at all (tax_scheme_id was added to the schema after the prototype
@@ -358,11 +370,12 @@ const fields: readonly FieldConfig<TaxHeadRow>[] = [
     label: 'Certificate Expected from Counterparty',
     type: 'checkbox',
     span: 2,
-    // §3.2 shows this "when Direction includes On Payments Received". Direction
-    // is not capturable in this form yet (see the Scope hint), so the nearest
-    // honest gate is the withholding scope itself — a superset, never a
-    // narrower condition than the spec's.
-    visibleWhen: whenWithholdingScope,
+    // §3.2 shows this "when Direction includes On Payments Received" — which
+    // is exactly what this gate now tests. It used to fall back to the
+    // withholding scope as a whole, on the (since outdated) grounds that
+    // Direction was not capturable here; Withholding Direction is a real
+    // field on this form, so the spec's own condition is expressible.
+    visibleWhen: whenWithheldOnPaymentsReceived,
     hint: 'Whether the counterparty is expected to issue a certificate evidencing what they withheld. When on, an uncertified receipt joins the chase queue; when off, it reads Not Expected and no chase is raised.',
   },
   {
@@ -425,6 +438,11 @@ const config: FormScreenConfig<TaxHeadRow> = {
     liability_arises_on: null,
     authority_reference_label: null,
     default_calculated_on: 'SUBTOTAL',
+    // An empty array, not absent: the checkgroup tolerates undefined, but
+    // Certificate Expected's own gate reads this list, and a create body that
+    // omits it entirely would leave a withholding head with no direction at
+    // all — which _validate_withholding_directions rejects anyway.
+    withholding_directions: [],
     certificate_expected: false,
     is_active: true,
     slab_bands: [],
@@ -444,6 +462,12 @@ const config: FormScreenConfig<TaxHeadRow> = {
     { label: 'Slab Bands', routeFor: (id) => ['/masters/taxes', id, 'slab-bands'], countFrom: 'slab_bands' },
     { label: 'Split Components', routeFor: (id) => ['/masters/taxes', id, 'split-components'], countFrom: 'split_components' },
     { label: 'Relief Rules', routeFor: (id) => ['/masters/taxes', id, 'relief-rules'], countFrom: 'relief_rules' },
+    // §3.2 Screen Design's "live worked example" (tax-head-worked-example.
+    // component.ts). Same edit-mode-only placement as the three above, and
+    // for the same reason plus one more: POST /masters/taxes/calculate takes
+    // a saved tax_head_id, so there is nothing for it to compute until the
+    // head exists.
+    { label: 'Worked Example', routeFor: (id) => ['/masters/taxes', id, 'worked-example'] },
   ],
 };
 

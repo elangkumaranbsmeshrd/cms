@@ -25,7 +25,7 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
   loadEndpoint: '/masters/company-profile',
   createEndpoint: '/masters/company-profile',
   updateEndpoint: '/masters/company-profile',
-  emptyRow: () => ({ ...emptyCompanyProfileRow(), logo_file_id: null, letterhead_file_id: null }),
+  emptyRow: () => ({ ...emptyCompanyProfileRow(), logo_file_id: null, letterhead_file_id: null, invoice_template_file_id: null }),
   fields: [
     {
       key: 'logo_file_id',
@@ -44,6 +44,27 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
       fileAccept: 'image/jpeg,image/png,application/pdf',
       span: 2,
       hint: 'JPEG, PNG or PDF, up to 5MB. The letterhead treatment (contact details, footer, formatting) generated documents use alongside the Logo above',
+    },
+    {
+      // §3.6d's fourth upload section, "Invoice Template | File Upload
+      // (single) | The layout file the Invoice module uses to generate invoice
+      // PDFs" — the one named field of that table that has a real column
+      // (company_profile.invoice_template_file_id, 0002_masters.py) rather
+      // than living in the deferred `company_documents` table. It was
+      // unreachable until now because CompanyProfileWrite never carried it;
+      // it does now, so Invoice §2.3's "the invoice template set in Company
+      // Profile" finally points at something a Super Admin can set.
+      //
+      // No `uploadPurpose` rule of its own in files.py, so it falls to
+      // _DEFAULT_RULE there (PDF / JPEG / PNG / DOCX / XLSX, 10MB) — wider
+      // than the letterhead's, which is right for a layout file.
+      key: 'invoice_template_file_id',
+      label: 'Invoice Template',
+      type: 'file',
+      uploadPurpose: 'company_invoice_template',
+      fileAccept: 'application/pdf,image/jpeg,image/png',
+      span: 2,
+      hint: 'Optional, single file. The layout the Invoice module\'s Download uses when generating an invoice PDF — the same letterhead treatment every other generated document gets.',
     },
   ],
 };

@@ -19,7 +19,15 @@ interface HsnSacRow extends HsnSacCodeRow {
 // §3.11: the link is "to a real, editable tax head — never a fixed label", so
 // the label comes from the Taxes endpoint itself. TaxHead's identifying field
 // is tax_name, not the `name` RefDataService defaults to.
-const TAX_HEAD_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
+//
+// Deliberately the UNFILTERED list, unlike the Linked Tax picker on the form
+// (hsn-sac-codes.form.config.ts, which narrows to the in-force Sales/Purchase
+// heads the API will actually accept). This one only has to RESOLVE ids that
+// are already stored: a code linked to a head that has since been retired or
+// deactivated must keep showing that head's name rather than "Unknown", and
+// the filter below has to be able to name it for the same reason. Hence
+// include_inactive — read, not write.
+const TAX_HEAD_REF = { endpoint: '/masters/taxes/options?include_inactive=true', labelKey: 'label' };
 
 // The stored values are the two-letter codes the column is typed for
 // (hsn_sac_codes.code_type is String(3)); the labels are the prototype's own

@@ -1,10 +1,28 @@
-import { ListScreenConfig } from '../../../shared/screens/screen.types';
+import { FilterOption, ListScreenConfig } from '../../../shared/screens/screen.types';
+import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { TicketCategoryRow } from '../masters.api';
 
-// masters_lookup.py's factory: search / include_inactive / format are the only
-// query params this endpoint takes, and masters_simple.py:214-219 declares
-// fields={name, description}, so the response row is {id, is_active, name,
-// description}. Nothing else exists to filter on.
+// §3.0's Created By / Last Modified By pair — see
+// service-categories.list.config.ts for why the options are derived from the
+// rows on screen rather than from an endpoint of their own.
+const USER_REF = { endpoint: '/users', labelKey: 'name' };
+
+function peopleOptions(key: 'created_by' | 'updated_by') {
+  return (rows: readonly TicketCategoryRow[], refData: RefDataService): FilterOption[] => {
+    const seen = new Map<string, FilterOption>();
+    for (const row of rows) {
+      const id = row[key];
+      if (id && !seen.has(id)) seen.set(id, { value: id, label: refData.label(USER_REF, id) });
+    }
+    return [...seen.values()];
+  };
+}
+
+// masters_lookup.py's factory: the query params this endpoint takes are
+// search, include_inactive, is_referenced, created_by, updated_by,
+// created_from/created_to and format — §3.0's filter convention in full. The
+// row's business fields are {name, code, description} (masters_simple.py's
+// registration); nothing else exists to filter on.
 //
 // The prototype's Status filter is the shared "Show inactive" control that
 // `includeInactiveParam` turns on — not a separate FilterDef (see
@@ -43,6 +61,12 @@ const config: ListScreenConfig<TicketCategoryRow> = {
       param: 'is_referenced',
       allLabel: 'Used — Any',
     },
+    // §3.0 / A048's third cross-cutting rule, on every sub-master list:
+    // "Created By, Last Modified By, and Created On range". Server transport,
+    // so the export header names them and exports exactly what is on screen.
+    { key: 'created_at', label: 'Created On', kind: 'daterange', transport: 'server', param: 'created' },
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', optionsFromRows: peopleOptions('created_by') },
+    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', optionsFromRows: peopleOptions('updated_by') },
   ],
   columns: [
     { key: 'name', header: 'Ticket Category', cellClass: 'cell-strong' },
@@ -55,12 +79,11 @@ const config: ListScreenConfig<TicketCategoryRow> = {
   ],
   // §3.0 rule 1 — Deactivate and Delete are Super Admin only.
   //
-  // QUEUED — see this group's audit report: masters_lookup.py's factory has no
-  // reverse of POST /{id}/deactivate, so a deactivated category can never come
-  // back via this UI even though §3.14's own Fields Table lists Status as a
-  // normal editable toggle. This button targets the endpoint that reversal
-  // needs (POST /{id}/activate) ahead of the backend adding it — inert (404)
-  // until it does, same pattern this session used for Financial Year's End Date.
+  // Activate is the other half of §3.14's "Status: Toggle (Active/Inactive)".
+  // It was written against a POST /{id}/activate the factory did not have
+  // yet; masters_lookup.py has since grown it, so this is a live action now,
+  // not the inert stub the note that used to sit here described (verified in
+  // the browser).
   rowActions: [
     {
       label: 'Activate',

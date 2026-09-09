@@ -65,6 +65,19 @@ export const mastersRoutes: Routes = [
     resolve: { config: () => import('./screens/taxes.relief-rules.config').then((m) => m.default) },
     loadComponent: () => import('./screens/tax-head-child-screen.component').then((m) => m.TaxHeadChildScreenComponent),
   },
+  // §3.2 Screen Design's "live worked example" — bespoke for the same reason
+  // the three child editors above are, and with no `resolve` because it
+  // drives one fixed endpoint (POST /masters/taxes/calculate) rather than a
+  // per-screen config. Read-only, so it is reachable by every role that can
+  // open Taxes at all, Accountant included — see the component's own doc
+  // comment.
+  {
+    path: 'masters/taxes/:id/worked-example',
+    pathMatch: 'full',
+    canMatch: [screenAccessGuard('masters.taxes')],
+    data: { screenId: 'masters.taxes', screenPath: 'masters/taxes/:id/worked-example' },
+    loadComponent: () => import('./screens/tax-head-worked-example.component').then((m) => m.TaxHeadWorkedExampleComponent),
+  },
 
   // The tabbed record IS the screen (Server Settings / Templates / Recent
   // Sends are its tabs). The child routes below stay reachable for deep links
@@ -83,6 +96,11 @@ export const mastersRoutes: Routes = [
   screenRoute('masters.work_week_hours', 'masters/work-week-hours/policies/:id/edit', () => import('./screens/work-week-policies.form.config')),
   screenRoute('masters.work_week_hours', 'masters/work-week-hours/pay-cycles', () => import('./screens/pay-cycles.list.config')),
   screenRoute('masters.work_week_hours', 'masters/work-week-hours/pay-cycles/new', () => import('./screens/pay-cycles.form.config')),
+  // §3.20's Saturday Calendar — the resolved fifty-two-row view (the third
+  // inner tab). The manual override rows behind it keep their own route below,
+  // since the calendar's "Override a Saturday" button navigates to that
+  // screen's create form and a deep link to the raw rows is still useful.
+  screenRoute('masters.work_week_hours', 'masters/work-week-hours/saturday-calendar', () => import('./screens/saturday-calendar.list.config')),
   screenRoute('masters.work_week_hours', 'masters/work-week-hours/saturday-overrides', () => import('./screens/saturday-overrides.list.config')),
   screenRoute('masters.work_week_hours', 'masters/work-week-hours/saturday-overrides/new', () => import('./screens/saturday-overrides.form.config')),
 

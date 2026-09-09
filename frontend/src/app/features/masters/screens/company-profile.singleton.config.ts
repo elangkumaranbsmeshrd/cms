@@ -40,6 +40,33 @@ const PAYROLL_BASIS_OPTIONS = [
   { value: 'DAY_BASIS', label: 'Day Basis (stored only — no payroll engine behind it)' },
 ];
 
+// §3.6a is explicit that Default Billing Tax is a "Dropdown (from Taxes,
+// Section 3.2 — **Sales/Billing scope heads only**)". The bare
+// /masters/taxes/options returns every active head of every scope, so this
+// dropdown was offering payroll deductions, employee-declaration heads and
+// withholding heads as a company's default OUTPUT tax — values the field is
+// specified never to hold. `scope` and `in_force_on` are real query params on
+// that endpoint (masters_taxes.list_tax_head_options), and this is the same
+// narrowing hsn-sac-codes.form.config.ts already applies for the same reason:
+// an option that contradicts the field's own definition is worse than no
+// option. SALES_AND_PURCHASE is included because a head scoped to both is a
+// billing head too — it is exactly what an invoice charges.
+//
+// `in_force_on` resolves when this lazily-loaded module is first imported, not
+// per render (RefLookup carries a plain endpoint string and RefDataService
+// caches one response per endpoint) — verbatim the trade-off documented on the
+// HSN/SAC lookup: a session left open across midnight keeps the previous day's
+// list until the next navigation, and a head that expired in the meantime is
+// still rejected on save by the server.
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+const BILLING_TAX_REF = {
+  endpoint: `/masters/taxes/options?scope=SALES_BILLING&scope=SALES_AND_PURCHASE&in_force_on=${todayIso()}`,
+  labelKey: 'label',
+};
+
 // Exported so company-profile.documents.singleton.config.ts (§5) can seed the
 // SAME defaults. Both tabs are independent SingletonFormComponent instances
 // pointed at the one /masters/company-profile resource (TabbedScreenComponent
@@ -148,16 +175,15 @@ const config: SingletonFormConfig<CompanyProfileRow> = {
     },
     {
       // Real, writable FK (app/schemas/masters.py CompanyProfileWrite ->
-      // default_billing_tax_head_id) declared on CompanyProfileRow
-      // (masters.api.ts:186) — same `ref` shape hsn-sac-codes.form.config.ts's
-      // Linked Tax field uses. Not filtered to Sales/Billing-scope, in-force
-      // heads client-side (prototype app-screens2.js:699 does that filtering
-      // itself) — same convention as that sibling field: point at the real
-      // list and let the backend's own 422 be the source of truth on save.
+      // default_billing_tax_head_id) declared on CompanyProfileRow — same
+      // `ref` shape hsn-sac-codes.form.config.ts's Linked Tax field uses,
+      // narrowed server-side to §3.6a's "Sales/Billing scope heads only" (see
+      // BILLING_TAX_REF above), which is also what the prototype's own General
+      // Info tab filters this list to (app-screens2.js:699).
       key: 'default_billing_tax_head_id',
       label: 'Default Billing Tax',
       type: 'select',
-      ref: { endpoint: '/masters/taxes/options', labelKey: 'label' },
+      ref: BILLING_TAX_REF,
       hint: 'Every in-force Sales/Billing tax head from Masters → Taxes — only the starting suggestion pre-filled on a new Invoice or Quote, never a lock; changed per document any time. Optional — a company with none configured can still save this profile.',
     },
     {

@@ -76,14 +76,15 @@ const config: ListScreenConfig<EmailTemplateRow> = {
   // The prototype's own columns and headers (app-screens2.js:785-788).
   columns: [
     { key: 'template_name', header: 'Template Name', cellClass: 'cell-strong' },
-    // The prototype renders this as a `chip` (app-screens2.js:786 — a plain
-    // neutral badge, same convention as expense-types.list.config.ts's Claim
-    // Type). ColumnType has no 'chip'; 'status' on a value absent from
-    // cell-format's badge map falls through to that identical neutral badge
-    // (badgeClass() -> 'b-neutral'), so this is the closest honest match
-    // rather than bare text. No staticOptions needed — triggered_from_module
-    // is already human-readable text ("Payroll", "Leave"), not an enum.
-    { key: 'triggered_from_module', header: 'Triggered From', type: 'status' },
+    // The prototype's own column type here (app-screens2.js:786 —
+    // `{ k: 'category', t: 'Triggered From', type: 'chip' }`), and ColumnType
+    // now carries 'chip'. It renders `badge-s b-neutral plain`, i.e. the same
+    // neutral badge with the leading status dot suppressed
+    // (components.css:335) — right for a module name, which labels the row
+    // rather than reporting a state. No staticOptions needed:
+    // triggered_from_module is already human-readable text ("Payroll",
+    // "Leave"), not an enum.
+    { key: 'triggered_from_module', header: 'Triggered From', type: 'chip' },
     { key: 'subject', header: 'Subject Line', cellClass: 'mono' },
     { key: 'is_enabled', header: 'Enabled', type: 'status' },
   ],

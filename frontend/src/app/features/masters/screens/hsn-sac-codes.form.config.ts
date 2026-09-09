@@ -15,13 +15,36 @@ interface HsnSacFormRow extends HsnSacCodeRow {
   custom_gst_rate_pct: number | null;
 }
 
-// §3.11: Linked Tax is "built live from whatever heads currently exist in
-// Taxes" — a real dropdown off the Taxes endpoint, never a fixed label. The
+// §3.11: Linked Tax is "every in-force tax head from Taxes, Section 3.2, with
+// Sales/Billing or Purchase scope — built live from whatever currently
+// exists". A real dropdown off the Taxes endpoint, never a fixed label. The
 // identifying field on a tax head is tax_name, not RefDataService's default
-// 'name'. The server re-checks the choice on write (_hsn_sac_before_write):
-// the head must exist, be Sales/Billing or Purchase scope, and be in force
-// today, or the save comes back 422 with that reason.
-const TAX_HEAD_REF = { endpoint: '/masters/taxes/options', labelKey: 'label' };
+// 'name'.
+//
+// Found live, this pass: this pointed at the bare /options route, which
+// returns EVERY active head of every scope — so the dropdown offered payroll
+// deductions and withholding heads, and picking one came back 422 ("Linked
+// Tax must be a Sales/Billing or Purchase scope head") from the server's own
+// _hsn_sac_before_write check. An option that can only ever fail is worse
+// than no option. The same three scopes and the same in-force test that
+// check does are now applied by the query below, so what the dropdown offers
+// is exactly what the API will accept.
+//
+// `in_force_on` is resolved when this lazily-loaded config module is first
+// imported, not per render — RefLookup carries a plain endpoint string and
+// RefDataService caches one response per endpoint. A session left open across
+// midnight would keep the previous day's list; the server re-checks in force
+// on write either way, so the worst case is an option that has just expired
+// being offered until the next navigation, never a wrong link being stored.
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+const TAX_HEAD_REF = {
+  endpoint: `/masters/taxes/options?scope=SALES_BILLING&scope=PURCHASE&scope=SALES_AND_PURCHASE&in_force_on=${todayIso()}`,
+  labelKey: 'label',
+};
 
 // Values are the two-letter codes the column is typed for (code_type is
 // String(3)); labels are the prototype's own option strings (app-forms.js

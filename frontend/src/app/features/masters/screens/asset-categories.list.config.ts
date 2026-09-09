@@ -1,5 +1,22 @@
-import { ListScreenConfig } from '../../../shared/screens/screen.types';
+import { FilterOption, ListScreenConfig } from '../../../shared/screens/screen.types';
+import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { AssetCategoryRow } from '../masters.api';
+
+// §3.0's Created By / Last Modified By pair — see
+// service-categories.list.config.ts for why the options are derived from the
+// rows on screen rather than from an endpoint of their own.
+const USER_REF = { endpoint: '/users', labelKey: 'name' };
+
+function peopleOptions(key: 'created_by' | 'updated_by') {
+  return (rows: readonly AssetCategoryRow[], refData: RefDataService): FilterOption[] => {
+    const seen = new Map<string, FilterOption>();
+    for (const row of rows) {
+      const id = row[key];
+      if (id && !seen.has(id)) seen.set(id, { value: id, label: refData.label(USER_REF, id) });
+    }
+    return [...seen.values()];
+  };
+}
 
 // §3a built both of this screen's former QUEUED gaps:
 // - Default Useful Life (Years): a real `default_useful_life_years` column
@@ -38,6 +55,12 @@ const config: ListScreenConfig<AssetCategoryRow> = {
       param: 'is_referenced',
       allLabel: 'Used — Any',
     },
+    // §3.0 / A048's third cross-cutting rule, on every sub-master list:
+    // "Created By, Last Modified By, and Created On range". Server transport,
+    // so the export header names them and exports exactly what is on screen.
+    { key: 'created_at', label: 'Created On', kind: 'daterange', transport: 'server', param: 'created' },
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', optionsFromRows: peopleOptions('created_by') },
+    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', optionsFromRows: peopleOptions('updated_by') },
   ],
   columns: [
     { key: 'name', header: 'Asset Category', cellClass: 'cell-strong' },

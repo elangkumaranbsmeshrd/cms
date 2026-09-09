@@ -30,25 +30,18 @@ function whichSaturday(row: SaturdayOverrideRow): string {
   return ORDINALS[Math.floor((Number(m[1]) - 1) / 7)] ?? '';
 }
 
-// QUEUED / NOT BUILT — the prototype's "Saturday Calendar" tab
-// (app-screens2.js:495-513, k:'saturday', D.masters.satCalendar) resolves and
-// lists all 52 Saturdays of the active Financial Year — Month, Date, Which,
-// Pattern Says, Actually, Hours Required, Note — by walking every Saturday
-// from the policy's Saturday Rule and checking each one against a Mandatory
-// holiday. This screen (retitled "…Overrides" specifically so it isn't
-// mistaken for that) only lists the override rows GET
-// /masters/work-week-policies/saturday-overrides actually returns; a
-// Saturday nobody has overridden simply doesn't appear here.
-// Not stubbed in because there is nothing to resolve against yet:
-// 01-masters-module.md:1247 explicitly defers "the computed read views" —
-// the Saturday Calendar named first among them — to Payroll's own
-// resolution engine (Attendance & Time Basis / Run Payroll), which reads the
-// policy's Saturday Rule plus these override rows and is the actual, already
-// -built consumer of both. Masters exposes no endpoint that walks a
-// financial year and resolves 52 dates; building one here would duplicate
-// logic Payroll already owns rather than reuse it. Once Payroll's resolution
-// is reachable read-only from the frontend, this screen (or a sibling tab
-// next to it) can render the full 52-row calendar against it.
+// BUILT, and it now lives next door rather than here — the prototype's
+// "Saturday Calendar" tab (app-screens2.js:495-513) resolves all 52 Saturdays
+// of the active Financial Year (Month, Date, Which, Pattern Says, Actually,
+// Hours Required, Note). That is GET /masters/work-week-policies/
+// saturday-calendar and saturday-calendar.list.config.ts, and it is what the
+// Work Week & Hours screen's third tab shows.
+//
+// THIS screen stays the raw override rows the POST endpoint actually creates —
+// deliberately titled "…Overrides" so the two are never confused. Every row
+// here also appears on the calendar, as the Saturday whose Actually disagrees
+// with Pattern Says, so this list is now the deep-linkable audit view of what
+// was overridden by hand rather than the only way to see Saturdays at all.
 const config: ListScreenConfig<SaturdayOverrideRow> = {
   shape: 'list',
   id: 'masters.work_week_hours',

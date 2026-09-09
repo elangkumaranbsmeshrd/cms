@@ -131,6 +131,31 @@ export function taxHeadWriteBody(row: TaxHeadRow): Record<string, unknown> {
   };
 }
 
+/** tax_heads.tax_name is String(191) (app/models/masters.py:34); a name that
+ * long plus a suffix would be truncated by MySQL rather than rejected. */
+const TAX_NAME_MAX = 191;
+const COPY_SUFFIX = ' (copy)';
+
+/** Found live, this pass: Duplicate 409'd on EVERY head and always had.
+ * POST /masters/taxes/{id}/duplicate takes a full TaxHeadCreate, and this
+ * action was sending the row back verbatim — the same Tax Name, in the same
+ * Scope, from the same Applies From, which is precisely the triple
+ * `ux_tax_heads_scope_name_from` (migration 0016) makes unique. The server
+ * rejected it with "A tax head with this Tax Name already exists in this
+ * Scope, effective from this same date", so the button did nothing at all.
+ *
+ * The copy therefore has to differ in the name or the date before it is sent.
+ * The NAME is the safe half to change: it is a label (masters_taxes.py's
+ * _LABEL_FIELDS), so it stays editable on the head that lands, whereas
+ * Applies From is arithmetic and locks on first use — inventing a date here
+ * would be a silent claim about when the new figures take effect, which is
+ * exactly the decision §3.2 wants the person making the rate change to take
+ * deliberately on the form this action opens. */
+function duplicateName(name: string): string {
+  const head = name.length + COPY_SUFFIX.length > TAX_NAME_MAX ? name.slice(0, TAX_NAME_MAX - COPY_SUFFIX.length) : name;
+  return `${head}${COPY_SUFFIX}`;
+}
+
 const config: ListScreenConfig<TaxHeadRow> = {
   shape: 'list',
   id: 'masters.taxes',
@@ -273,7 +298,10 @@ const config: ListScreenConfig<TaxHeadRow> = {
       label: 'Duplicate',
       endpoint: (row) => `/masters/taxes/${row.id}/duplicate`,
       screenAction: 'edit',
-      body: (row) => taxHeadWriteBody(row),
+      // duplicateName() above, not the row's own name — see its comment: an
+      // unchanged (scope, tax_name, applies_from) triple is refused by the
+      // database, which made this button a no-op on every head.
+      body: (row) => ({ ...taxHeadWriteBody(row), tax_name: duplicateName(row.tax_name) }),
       onSuccess: (res) => ['/masters/taxes', (res as { id: string }).id, 'edit'],
     },
     {

@@ -1,9 +1,12 @@
-import { ListScreenConfig } from '../../../shared/screens/screen.types';
+import { FilterOption, ListScreenConfig } from '../../../shared/screens/screen.types';
+import { RefDataService } from '../../../shared/screens/ref-data.service';
 import { EmploymentTypeRow } from '../masters.api';
 
-// masters_lookup.py's factory: search / include_inactive / format are the only
-// query params, and masters_simple.py:242-247 declares fields={"name": ...}
-// only, so the response row is {id, is_active, name}.
+// masters_lookup.py's factory: search, include_inactive, is_referenced,
+// created_by, updated_by, created_from/created_to and format are the query
+// params — §3.0's filter convention in full, and nothing else. The row's own
+// business fields are {name, code} (masters_simple.py's registration); §3.18's
+// Fields Table lists no others.
 //
 // The prototype's Status filter is the shared "Show inactive" control that
 // `includeInactiveParam` turns on, not a second Status <select> (see
@@ -13,6 +16,24 @@ import { EmploymentTypeRow } from '../masters.api';
 // a LIVE query against Employee.employment_type_id / WorkWeekPolicy /
 // Payslip (masters_lookup.py's `referenced_by` mechanism), not a stored
 // usage_count counter, so EmploymentType needed no new migration for it.
+
+// §3.0's Created By / Last Modified By pair. The ids come back on the row
+// (masters_simple.py's `_AUDIT_READ_ONLY`); `/users` turns one into a name.
+const USER_REF = { endpoint: '/users', labelKey: 'name' };
+
+// There is no "distinct creators" endpoint, so the option list is derived from
+// the rows on screen — the same technique customer.directory.config.ts uses.
+function peopleOptions(key: 'created_by' | 'updated_by') {
+  return (rows: readonly EmploymentTypeRow[], refData: RefDataService): FilterOption[] => {
+    const seen = new Map<string, FilterOption>();
+    for (const row of rows) {
+      const id = row[key];
+      if (id && !seen.has(id)) seen.set(id, { value: id, label: refData.label(USER_REF, id) });
+    }
+    return [...seen.values()];
+  };
+}
+
 const config: ListScreenConfig<EmploymentTypeRow> = {
   shape: 'list',
   id: 'masters.employment_types',
@@ -41,6 +62,16 @@ const config: ListScreenConfig<EmploymentTypeRow> = {
       param: 'is_referenced',
       allLabel: 'Used — Any',
     },
+    // §3.0 / A048's third cross-cutting rule, on every sub-master list:
+    // "Created By, Last Modified By, and Created On range — Masters is
+    // confidential shared configuration, and knowing who changed a shared list
+    // and when is worth more here than almost anywhere else in the CMS."
+    // Server transport for all three (masters_lookup.py's list_rows takes
+    // created_by / updated_by / created_from / created_to), so the export
+    // header names them and exports exactly what is on screen.
+    { key: 'created_at', label: 'Created On', kind: 'daterange', transport: 'server', param: 'created' },
+    { key: 'created_by', label: 'Created By', kind: 'select', transport: 'server', allLabel: 'Created by Anyone', optionsFromRows: peopleOptions('created_by') },
+    { key: 'updated_by', label: 'Last Modified By', kind: 'select', transport: 'server', allLabel: 'Modified by Anyone', optionsFromRows: peopleOptions('updated_by') },
   ],
   columns: [
     { key: 'name', header: 'Employment Type', cellClass: 'cell-strong' },

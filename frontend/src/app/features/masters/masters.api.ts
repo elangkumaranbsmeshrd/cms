@@ -20,7 +20,7 @@ export interface ExpenseTypeRow {
   claim_type_changed_at?: string | null;
 }
 
-export interface LeaveTypeRow {
+export interface LeaveTypeRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -30,6 +30,11 @@ export interface LeaveTypeRow {
   carry_forward_allowed: boolean;
   max_carry_forward_days: number | null;
   is_quota_tracked: boolean;
+  // masters_simple.py's leave-types router declares referenced_by over all
+  // four leave_type_id FKs (LeaveRequest / LeaveBalance /
+  // LeaveCarryForwardLine / LeaveBalanceAdjustment), so the factory serves
+  // this on every row and accepts ?is_referenced= — §3.0's Used/Unused filter.
+  is_referenced: boolean;
 }
 
 export interface PaymentModeRow {
@@ -41,7 +46,7 @@ export interface PaymentModeRow {
   is_referenced: boolean;
 }
 
-export interface DepartmentRow {
+export interface DepartmentRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -50,7 +55,7 @@ export interface DepartmentRow {
   is_referenced: boolean;
 }
 
-export interface DesignationRow {
+export interface DesignationRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -75,7 +80,26 @@ export interface HsnSacCodeRow {
   custom_gst_rate_pct: number | null;
 }
 
-export interface ServiceCategoryRow {
+/**
+ * Masters §3.0's "Created By, Last Modified By, and Created On range" filters
+ * (Appendix A, A048) read these three. They are on the wire only for the
+ * sub-masters whose list screen declares those filters — masters_simple.py
+ * passes its `_AUDIT_READ_ONLY` as that registration's `read_only_fields`,
+ * rather than the factory widening every lookup's payload with who-touched-it
+ * ids nothing on screen would use.
+ *
+ * `created_by`/`updated_by` are raw users.id values: the two people pickers
+ * label them through `/users` and build their option lists from the rows on
+ * screen, there being no "distinct creators" endpoint (the same technique
+ * Customer Directory and Ticket List already use).
+ */
+export interface LookupAuditFields {
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+}
+
+export interface ServiceCategoryRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -95,7 +119,7 @@ export interface UnitOfMeasureRow {
   is_referenced: boolean;
 }
 
-export interface TicketCategoryRow {
+export interface TicketCategoryRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -104,7 +128,7 @@ export interface TicketCategoryRow {
   is_referenced: boolean;
 }
 
-export interface CustomerStatusRow {
+export interface CustomerStatusRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -112,7 +136,7 @@ export interface CustomerStatusRow {
   is_referenced: boolean;
 }
 
-export interface CustomerSourceRow {
+export interface CustomerSourceRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -120,7 +144,7 @@ export interface CustomerSourceRow {
   is_referenced: boolean;
 }
 
-export interface AssetCategoryRow {
+export interface AssetCategoryRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -133,7 +157,7 @@ export interface AssetCategoryRow {
   is_referenced: boolean;
 }
 
-export interface EmploymentTypeRow {
+export interface EmploymentTypeRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   name: string;
@@ -141,7 +165,7 @@ export interface EmploymentTypeRow {
   is_referenced: boolean;
 }
 
-export interface InsurancePlanRow {
+export interface InsurancePlanRow extends LookupAuditFields {
   id: string;
   is_active: boolean;
   plan_name: string;
@@ -150,6 +174,11 @@ export interface InsurancePlanRow {
   coverage_amount: number;
   company_contribution_monthly: number;
   employee_contribution_monthly: number;
+  // masters_simple.py passes `referenced_by=[(EmployeeInsuranceEnrollment,
+  // "insurance_plan_id")]`, so the factory has always sent this field on
+  // every row — the interface just never declared it, which is why the list
+  // screen could not read §3.0's Used signal.
+  is_referenced: boolean;
 }
 
 // backend/app/api/v1/masters_bank_accounts.py — bespoke, not the simple-
@@ -188,6 +217,11 @@ export interface HolidayRow {
   financial_year_id: string;
   holiday_type: string; // MANDATORY | OPTIONAL
   recurring_every_year: boolean;
+  // Served on every row (masters_simple.py passes referenced_by=[(Attendance
+  // Record, "holiday_id")]) but nothing reads it yet: CalendarScreenConfig has
+  // no rowActions hook, so Holidays has no Delete button to gate on it. See
+  // holidays.calendar.config.ts's header for that gap.
+  is_referenced: boolean;
 }
 
 // backend/app/api/v1/masters_company_profile.py — singleton (no id) plus
@@ -218,6 +252,10 @@ export interface CompanyProfileRow {
   // every generated invoice/payslip/offer letter.
   logo_file_id: string | null;
   letterhead_file_id: string | null;
+  // §3.6d's fourth upload section — the layout file Invoice's own Download
+  // reads. The column always existed; CompanyProfileWrite carries it now, so
+  // the Documents tab can finally set it.
+  invoice_template_file_id: string | null;
   // §3.6, "New in this revision" — the biometric input-source gate and the
   // feed reference it makes mandatory once switched on. Off means device
   // payloads are refused outright, so a profile that has never been told
@@ -311,6 +349,21 @@ export interface ResolvedPeriodRow {
   period_end: string;
   salary_credit_date: string;
   days_in_period: number;
+}
+
+// §3.20's Saturday Calendar — a DERIVED read view, one row per Saturday of
+// the current Financial Year, resolved server-side through the same
+// attendance_engine.resolve_day Record Attendance and Run Payroll use. `id` is
+// the ISO date, not a record id: nothing here is stored.
+export interface SaturdayCalendarRow {
+  id: string;
+  month: string; // 'Aug 2026'
+  saturday_date: string;
+  which: string; // '1st' … '5th'
+  pattern_says: string; // 'Working' | 'Week Off' — the rule alone, before holidays/overrides
+  actually: string; // 'Working' | 'Week Off' | 'Holiday' — what actually applies
+  hours_required: number;
+  note: string; // the override's mandatory Reason, or the holiday that took the day
 }
 
 export interface SaturdayOverrideRow {

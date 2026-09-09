@@ -7,6 +7,33 @@ import companyAddresses from './company-addresses.list.config';
 import numberPrefixRules from './number-prefix-rules.list.config';
 import bankAccounts from './bank-accounts.list.config';
 
+// §3.6a's last Fields Table row: "Registered Address (Primary) | Read-only
+// summary | Automatically shows whichever address is marked Primary in part
+// (b) below; not edited from here directly."
+//
+// It is not a field on the profile response at all, so a SingletonFormConfig
+// field can't render it (and SingletonFormComponent has no read-only/derived
+// field rendering to hang one on). What it IS is a derived summary of another
+// tab's rows — exactly what RecordHeaderDef.summary's `tabRows` parameter
+// exists for, so it lands as a header tile that stays visible on all five
+// inner tabs rather than only on General Info. `state_id` is a bare FK with no
+// label in this response, so the tile composes the parts that read without a
+// lookup; the Addresses tab carries the full record.
+interface AddressLike {
+  is_primary?: boolean;
+  is_active?: boolean;
+  line1?: string;
+  city?: string;
+  pin_code?: string;
+}
+
+function primaryAddress(rows: readonly unknown[] | undefined): string {
+  if (!Array.isArray(rows)) return '—'; // tab rows not fetched yet
+  const primary = (rows as AddressLike[]).find((r) => r.is_primary);
+  if (!primary) return 'None marked primary';
+  return [primary.line1, primary.city, primary.pin_code].filter(Boolean).join(', ') || '—';
+}
+
 // Masters §3.6 as the prototype renders it (app-screens2.js RECORDS.company):
 // one record with an identity card and tabs, NOT a flat form with
 // "Addresses →" / "Number Prefix Rules →" / "Bank Accounts →" buttons that
@@ -64,6 +91,12 @@ const config: TabbedScreenConfig<CompanyProfileRow> = {
       row?.industry ?? '',
     ],
     badge: (row) => (row ? 'Active' : 'Draft'),
+    // Reads the Addresses tab's own already-fetched rows (TabbedScreen fetches
+    // every list tab up front for its count badge), so this is the same data
+    // the Addresses tab shows, never a second copy or a second request.
+    summary: (_row, tabRows) => [
+      { label: 'Registered Address (Primary)', value: primaryAddress(tabRows['addresses']) },
+    ],
   },
   // Tab order matches the prototype's own (app-screens2.js:672-787): General
   // Info · Addresses · Bank Details · Documents · Number Prefixes. Documents

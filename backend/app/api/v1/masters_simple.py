@@ -12,10 +12,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.masters_lookup import build_lookup_router
+from app.api.v1.masters_lookup import _as_client_error, build_lookup_router
 from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.models.platform import User
@@ -66,6 +67,23 @@ from app.models.employee import AnnouncementTarget, AttendanceRecord, EmployeeIn
 
 combined_router = APIRouter()
 
+# Masters §3.0's "Created By, Last Modified By, and Created On range" filters
+# (Appendix A, A048). The factory FILTERS on these columns for every lookup
+# unconditionally — they come from AuditMixin, so they are always there — but
+# the ids have to travel in the row for the client to build the two people
+# pickers at all: the list screen derives their options from the rows on
+# screen (`optionsFromRows`), there being no "distinct creators" endpoint,
+# the same technique Customer Directory and Ticket List already use.
+#
+# Passed only where a list config actually declares those filters, rather than
+# widened into the factory itself: a sub-master that doesn't offer them has no
+# reason to start naming who touched its rows.
+_AUDIT_READ_ONLY: dict[str, tuple[type, object]] = {
+    "created_by": (str | None, None),
+    "updated_by": (str | None, None),
+    "created_at": (datetime | None, None),
+}
+
 
 async def _expense_type_before_write(data: dict, db: AsyncSession, existing: ExpenseType | None) -> dict:
     """Masters §3.3: "Changing Claim Type on a type already in use is not a
@@ -92,6 +110,13 @@ combined_router.include_router(
             "default_bank_account_id": (str | None, None),
             "description": (str | None, None),
         },
+        # §3.0's cross-cutting rule is "Search, across that sub-master's name
+        # AND CODE fields". The factory's single-column default left
+        # `short_code` unsearched here, so the box whose own placeholder reads
+        # "Search Expense Type or Code…" returned nothing for TRV, NET or CLD
+        # — the codes are printed in the column right beside it. Same two-column
+        # list Payment Mode and Department already pass.
+        search_field=["name", "short_code"],
         read_only_fields={
             "claim_type_changed_at": (datetime | None, None),
             "previous_claim_type": (str | None, None),
@@ -131,6 +156,17 @@ combined_router.include_router(
             "max_carry_forward_days": (Decimal | None, None),
             "is_quota_tracked": (bool, True),
         },
+        # §3.0's Created By / Last Modified By / Created On filters — the same
+        # `_AUDIT_READ_ONLY` the other sub-masters that declare those filters
+        # pass. The factory already FILTERS on these columns for every lookup;
+        # this is only what puts the two ids in the row, which is where the
+        # Created By / Last Modified By pickers get their options from.
+        read_only_fields=_AUDIT_READ_ONLY,
+        # §3.0: "Search, across that sub-master's name and code fields" — the
+        # box's own placeholder says "Search Leave Type or Code…", and Code is
+        # the column right beside the name, so a single-column default would
+        # leave CL/EL/WFH unsearchable.
+        search_field=["name", "short_code"],
         # Used/Unused filter — same gap as Expense Types above. Every table in
         # app/models carrying a `leave_type_id`.
         referenced_by=[
@@ -227,7 +263,23 @@ async def import_holidays(
         # date is caught too, not only rows already in the database.
         existing_by_date[(r.financial_year_id, r.holiday_date)] = row
         created += 1
-    await db.commit()
+    # The FY-range check is a database TRIGGER (alembic 0002_masters.py), so it
+    # only fires here, on flush. Without this the SIGNAL surfaced as an
+    # unhandled 500 — and a 500 raised inside the app never gets the CORS
+    # headers the middleware adds to a normal response, so the browser could
+    # not even read the body and the screen showed a bare "Import failed."
+    # Same _as_client_error translation every single-row write in
+    # masters_lookup.py already uses; the detail names the one rule a whole
+    # batch can trip, since the trigger does not say which row it rejected.
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raise _as_client_error(
+            exc,
+            "One or more dates fall outside the selected financial year's range, "
+            "or the year is locked. Nothing was imported — fix the file and try again.",
+        ) from exc
     return {"imported": created, "skipped": skipped, "overwritten": overwritten}
 
 
@@ -258,6 +310,11 @@ combined_router.include_router(
         # sub-master's name and code fields" — the factory's single-column
         # default left `code` unsearched. See masters_lookup.py's docstring.
         search_field=["name", "code"],
+        # A048's Created By / Last Modified By / Created On range half of §3.0's
+        # filter convention. The four query params are unconditional in the
+        # factory; this is only what puts the two ids on the row so the screen's
+        # people pickers have options to offer.
+        read_only_fields=_AUDIT_READ_ONLY,
         create_only_fields={"is_active": (bool, True)},
         # §3a's own table names Department as missing Used too — found on a
         # second pass, since the first pass's registration only added `code`.
@@ -283,6 +340,7 @@ combined_router.include_router(
         prefix="/masters/designations", tag="masters", screen_key="masters.designations", model=Designation,
         fields={"name": (str, ...), "code": (str | None, None), "department_id": (str | None, None), "level_grade": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,  # A048, same as Department above
         referenced_by=[(Employee, "designation_id"), (WorkWeekPolicy, "designation_id")],
         create_only_fields={"is_active": (bool, True)},
         # `name` only — never department_id/level_grade, which is the org
@@ -339,6 +397,7 @@ combined_router.include_router(
         prefix="/masters/service-categories", tag="masters", screen_key="masters.service_categories", model=ServiceCategory,
         fields={"name": (str, ...), "code": (str | None, None), "description": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,
         referenced_by=[(Invoice, "service_category_id")],
         create_only_fields={"is_active": (bool, True)},
         # Invoice's own Service Category field (invoice.api.ts).
@@ -375,6 +434,7 @@ combined_router.include_router(
         prefix="/masters/ticket-categories", tag="masters", screen_key="masters.ticket_categories", model=TicketCategory,
         fields={"name": (str, ...), "code": (str | None, None), "description": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,
         referenced_by=[(Ticket, "category_id")],
         create_only_fields={"is_active": (bool, True)},
         # Ticket List / Raise a Ticket, for all five roles (ticket.api.ts's
@@ -388,6 +448,7 @@ combined_router.include_router(
         prefix="/masters/customer-statuses", tag="masters", screen_key="masters.customer_statuses", model=CustomerStatus,
         fields={"name": (str, ...), "code": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,
         referenced_by=[(Customer, "status_id")],
         create_only_fields={"is_active": (bool, True)},
         # Customer Directory/Record's Status column and filter.
@@ -400,6 +461,7 @@ combined_router.include_router(
         prefix="/masters/customer-sources", tag="masters", screen_key="masters.customer_sources", model=CustomerSource,
         fields={"name": (str, ...), "code": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,
         referenced_by=[(Customer, "source_id")],
         create_only_fields={"is_active": (bool, True)},
         # Customer Directory/Record's Source column and filter.
@@ -421,6 +483,7 @@ combined_router.include_router(
             "default_useful_life_years": (Annotated[int, Field(gt=0)] | None, None),
         },
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,
         referenced_by=[(Asset, "category_id")],
         create_only_fields={"is_active": (bool, True)},
         # Asset Directory / Record / Reports / Maintenance / Requests /
@@ -436,6 +499,7 @@ combined_router.include_router(
         prefix="/masters/employment-types", tag="masters", screen_key="masters.employment_types", model=EmploymentType,
         fields={"name": (str, ...), "code": (str | None, None)},
         search_field=["name", "code"],
+        read_only_fields=_AUDIT_READ_ONLY,  # A048, same as Department above
         referenced_by=[(Employee, "employment_type_id"), (WorkWeekPolicy, "employment_type_id"), (Payslip, "employment_type_id")],
         create_only_fields={"is_active": (bool, True)},
         # Employee Directory / Master Record / My Profile, Payroll Payslips
@@ -451,11 +515,26 @@ combined_router.include_router(
             "plan_name": (str, ...),
             "plan_type": (str, ...),  # HEALTH | LIFE | PERSONAL_ACCIDENT
             "provider": (str | None, None),
-            "coverage_amount": (Decimal, ...),
-            "company_contribution_monthly": (Decimal, ...),
-            "employee_contribution_monthly": (Decimal, Decimal(0)),
+            # The three bounds below are transcribed from insurance_plans' own
+            # CHECK constraints (ck_insurance_plans_coverage > 0,
+            # ck_insurance_plans_company >= 0, ck_insurance_plans_employee >= 0),
+            # same reasoning as asset-categories' gt=0 above. Without them the
+            # schema accepted a negative amount, the DB CHECK rejected it, and
+            # the factory's DBAPIError handler relabelled it "Duplicate name or
+            # invalid reference" — a 409 naming the wrong problem entirely, and
+            # the only message the Add Plan form could show. Declared here they
+            # are a 422 naming the field, before any write is attempted.
+            "coverage_amount": (Annotated[Decimal, Field(gt=0)], ...),
+            "company_contribution_monthly": (Annotated[Decimal, Field(ge=0)], ...),
+            "employee_contribution_monthly": (Annotated[Decimal, Field(ge=0)], Decimal(0)),
         },
         search_field="plan_name",
+        # A048, same as Department above — and the one sub-master here where a
+        # role other than Super Admin sees them, since §3.0's all-roles rule
+        # gives HR "that tab's full filter set and export, not a reduced
+        # version". The ids are user ids only; `/users` (which HR can already
+        # read) is what turns them into names, client-side.
+        read_only_fields=_AUDIT_READ_ONLY,
         # Used/Unused filter — an employee enrolled on the plan is what makes
         # it "used" (app/models/employee.py EmployeeInsuranceEnrollment).
         referenced_by=[(EmployeeInsuranceEnrollment, "insurance_plan_id")],

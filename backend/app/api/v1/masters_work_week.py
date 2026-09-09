@@ -4,18 +4,22 @@ DB guard proven live in Phase 1's verification pass), Saturday Overrides, and
 Pay Cycle (§3.20's own inner tab — "the date window a payroll run actually
 covers", added 2026-07-30 on explicit instruction).
 
-The Saturday Calendar and Resolved Periods / Cutoff Reconciliation tabs are
-READ views computed from this data (52 rows a year, three months' preview) —
-real UI-support endpoints for those belong with Payroll (Phase 3), which is
-the actual consumer of the resolution; Phase 1 ships the data these views are
-computed FROM, correctly guarded, per BUILD-PROMPT §13's Phase 1 scope
-("Work Week & Hours + Pay Cycle" — the masters, not payroll's calculations).
+The Saturday Calendar and Resolved Periods tabs are READ views computed from
+this data (52 rows a year, three months' preview). Both are BUILT here now,
+and neither re-derives anything: `list_saturday_calendar` resolves each date
+through `attendance_engine.resolve_day` and `list_resolved_periods` through
+`payroll_engine.resolve_pay_period` — the same two functions Record Attendance
+and Run Payroll pay people by, so a preview can never disagree with the run.
+The Pay Cycle tab's Cutoff Reconciliation table is the one view still
+outstanding: unlike these two it needs live dated events (leave, attendance
+corrections, adjustments) sitting past a closed cutoff, which is Payroll's own
+data rather than a Masters read.
 """
 
 import calendar
 import logging
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
@@ -25,7 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.core.db import get_db
 from app.core.serialization.masking import apply_field_masking
-from app.models.masters import PayCycle, SaturdayOverride, WorkWeekPolicy
+from app.models.masters import Holiday, PayCycle, SaturdayOverride, WorkWeekPolicy
+from app.models.numbering import FinancialYear
 from app.models.platform import User
 from app.rbac.deps import require_screen
 from app.rbac.resolver import PermissionSet
@@ -39,6 +44,12 @@ from app.schemas.masters import (
     WorkWeekPolicyWrite,
 )
 from app.services import list_export
+from app.services.attendance_engine import (
+    SaturdayOverrideSnapshot,
+    WorkWeekPolicySnapshot,
+    resolve_day,
+    saturday_ordinal,
+)
 from app.services.pdf_engine import ColumnSpec
 from app.services.payroll_engine import resolve_pay_period
 
@@ -69,11 +80,26 @@ _POLICY_LIST_COLUMNS = [
     ColumnSpec("is_active", "Status"),
 ]
 
-# Masters §3.20 Screen Design, Saturday Calendar: "Export Calendar — the file
-# HR circulates at the start of the year." This endpoint returns the manually
-# created override rows (not the full computed 52-row calendar, which is a
-# Payroll-phase read view per this module's own docstring above), so the
-# export mirrors exactly what list_saturday_overrides already returns.
+# Masters §3.20 Screen Design, Saturday Calendar: "Month, Date, Which
+# (1st…5th), Pattern Says, Actually, Hours Required, Override/Note." The
+# resolved 52-row view, not the handful of manual override rows below it —
+# this is the set "Export Calendar" was always meant to produce ("the file HR
+# circulates at the start of the year").
+_SATURDAY_CALENDAR_COLUMNS = [
+    ColumnSpec("month", "Month"),
+    ColumnSpec("saturday_date", "Date"),
+    ColumnSpec("which", "Which"),
+    ColumnSpec("pattern_says", "Pattern Says"),
+    ColumnSpec("actually", "Actually"),
+    ColumnSpec("hours_required", "Hours Required", align="right"),
+    ColumnSpec("note", "Override / Note"),
+]
+
+# The manually created override rows, exported as they are listed. §3.20's own
+# "Export Calendar — the file HR circulates at the start of the year" is the
+# resolved 52-row export above (_SATURDAY_CALENDAR_COLUMNS); this narrower one
+# is the audit trail of what somebody overrode by hand, with the Reason each
+# one is required to carry.
 _SATURDAY_LIST_COLUMNS = [
     ColumnSpec("saturday_date", "Saturday Date"),
     ColumnSpec("pattern_says", "Pattern Says"),
@@ -309,6 +335,174 @@ async def activate_policy(
     return apply_field_masking(WorkWeekPolicyOut.model_validate(row).model_dump(), perms)
 
 
+# ------------------------------------------------------ Saturday Calendar
+_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_ORDINALS = ("1st", "2nd", "3rd", "4th", "5th")
+_ISO_SATURDAY = 6
+
+# What resolve_day's day_type means on a Saturday, in the words §3.20's own
+# Screen Design uses for the "Actually" column (and the prototype's
+# satCalendar rows: Working / Week Off / Holiday).
+_DAY_TYPE_LABEL = {
+    "WORKING_SATURDAY": "Working",
+    "WEEKLY_OFF": "Week Off",
+    "MANDATORY_HOLIDAY": "Holiday",
+}
+
+
+def _is_last_saturday(d: date) -> bool:
+    return d.day + 7 > calendar.monthrange(d.year, d.month)[1]
+
+
+@router.get("/saturday-calendar", response_model=None)
+async def list_saturday_calendar(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    perms: PermissionSet = Depends(require_screen(SCREEN)),
+    financial_year_id: str | None = Query(None, description="Defaults to the Financial Year currently marked current"),
+    policy_id: str | None = Query(None, description="Defaults to the active Company-wide policy"),
+    format: str | None = Query(None, description="pdf | excel — omit for the normal JSON response"),
+) -> list[dict] | Response:
+    """Masters §3.20's **Saturday Calendar** tab: "every Saturday of the active
+    Financial Year resolved from the rule: Month, Date, Which (1st…5th),
+    Pattern Says, Actually, Hours Required, Override/Note. Fifty-two rows for
+    FY 2026–27."
+
+    A derived read view — nothing here is stored, exactly like Resolved
+    Periods below. And, for the same reason that one calls Payroll's own
+    resolve_pay_period rather than re-deriving the window, every row here is
+    resolved by **attendance_engine.resolve_day** — the one function Record
+    Attendance and Run Payroll already resolve a real day with. A second copy
+    of the precedence rule (dated override > Mandatory holiday > Saturday
+    pattern) would be free to drift from the one people are actually paid by,
+    which would make this calendar worse than not having it: HR circulates it
+    at the start of the year.
+
+    Empty rather than an error when there is no current Financial Year or no
+    policy to resolve against — there is simply no calendar to draw yet, the
+    same way an unset Pay Cycle resolves no periods.
+    """
+    if financial_year_id:
+        fy = await db.get(FinancialYear, financial_year_id)
+    else:
+        fy = (await db.execute(select(FinancialYear).where(FinancialYear.is_current.is_(True)))).scalar_one_or_none()
+    if fy is None:
+        return [] if not format else await list_export.build_export(format, db, current_user, "Saturday Calendar", _SATURDAY_CALENDAR_COLUMNS, [], {})
+
+    if policy_id:
+        policy = await db.get(WorkWeekPolicy, policy_id)
+    else:
+        # §3.20: "Company-wide is the fallback. Exactly one Company-wide
+        # policy may be Active at a time" — so the company's own calendar is
+        # that policy's. A narrower policy covers specific people, not the
+        # year everyone reads off the wall.
+        policy = (
+            await db.execute(
+                select(WorkWeekPolicy).where(WorkWeekPolicy.applies_to == "COMPANY_WIDE", WorkWeekPolicy.is_active.is_(True))
+            )
+        ).scalar_one_or_none()
+    if policy is None:
+        return [] if not format else await list_export.build_export(format, db, current_user, "Saturday Calendar", _SATURDAY_CALENDAR_COLUMNS, [], {})
+
+    snapshot = WorkWeekPolicySnapshot(
+        net_working_hours_per_day=policy.net_working_hours_per_day,
+        grace_window_minutes=policy.grace_window_minutes,
+        half_day_threshold_hours=policy.half_day_threshold_hours,
+        weekly_off_days=policy.weekly_off_days,
+        saturday_rule=policy.saturday_rule,
+        working_saturday_hours_mode=policy.working_saturday_hours_mode,
+        custom_saturday_hours=policy.custom_saturday_hours,
+        mandatory_holiday_overrides_saturday=policy.mandatory_holiday_overrides_saturday,
+    )
+
+    holidays = (
+        await db.execute(
+            select(Holiday).where(
+                Holiday.financial_year_id == fy.id,
+                Holiday.is_active.is_(True),
+                Holiday.holiday_date.between(fy.start_date, fy.end_date),
+            )
+        )
+    ).scalars().all()
+    holiday_by_date: dict[date, Holiday] = {}
+    for h in holidays:
+        # A Mandatory holiday is the one that can take a working Saturday off
+        # it, so it wins the slot if two land on the same date.
+        existing = holiday_by_date.get(h.holiday_date)
+        if existing is None or (existing.holiday_type != "MANDATORY" and h.holiday_type == "MANDATORY"):
+            holiday_by_date[h.holiday_date] = h
+
+    overrides = (
+        await db.execute(
+            select(SaturdayOverride).where(
+                SaturdayOverride.saturday_date.between(fy.start_date, fy.end_date),
+                (SaturdayOverride.work_week_policy_id == policy.id) | (SaturdayOverride.work_week_policy_id.is_(None)),
+            )
+        )
+    ).scalars().all()
+    override_by_date = {o.saturday_date: o for o in overrides}
+
+    # First Saturday on or after the year opens, then every seventh day.
+    cursor = fy.start_date + timedelta(days=(_ISO_SATURDAY - fy.start_date.isoweekday()) % 7)
+    rows: list[dict] = []
+    while cursor <= fy.end_date:
+        holiday = holiday_by_date.get(cursor)
+        override = override_by_date.get(cursor)
+        resolution = resolve_day(
+            cursor,
+            snapshot,
+            is_mandatory_holiday=holiday is not None and holiday.holiday_type == "MANDATORY",
+            is_optional_holiday=holiday is not None and holiday.holiday_type == "OPTIONAL",
+            saturday_override=(
+                SaturdayOverrideSnapshot(override_to=override.override_to, hours_required=override.hours_required)
+                if override is not None
+                else None
+            ),
+            is_last_saturday_of_month=_is_last_saturday(cursor),
+        )
+
+        # "Pattern Says" is what the rule ALONE would have said, before any
+        # holiday or override — the column exists precisely so a reader can
+        # see which of the two answers won, and why.
+        pattern = _resolve_saturday_pattern(cursor, policy.saturday_rule)
+        if policy.saturday_rule == "LAST_ONLY":
+            pattern = "WORKING" if _is_last_saturday(cursor) else "WEEK_OFF"
+
+        if override is not None:
+            note = f"Overridden to {_DAY_TYPE_LABEL.get(resolution.day_type, resolution.day_type)} — {override.reason}"
+        elif holiday is not None and holiday.holiday_type == "MANDATORY":
+            note = (
+                f"{holiday.name} — a Mandatory holiday overrides the Saturday rule"
+                if policy.mandatory_holiday_overrides_saturday
+                else f"{holiday.name} — Mandatory, but this policy does not let a holiday override the Saturday rule"
+            )
+        elif holiday is not None:
+            note = f"{holiday.name} — an Optional holiday never overrides; anyone taking it draws on their leave balance"
+        else:
+            note = ""
+
+        rows.append({
+            "id": cursor.isoformat(),  # a resolved date, not a record id — nothing here is stored
+            "month": f"{_MONTH_ABBR[cursor.month - 1]} {cursor.year}",
+            "saturday_date": cursor.isoformat(),
+            "which": _ORDINALS[saturday_ordinal(cursor) - 1],
+            "pattern_says": "Working" if pattern == "WORKING" else "Week Off",
+            "actually": _DAY_TYPE_LABEL.get(resolution.day_type, resolution.day_type),
+            "hours_required": float(resolution.required_hours),
+            "note": note,
+        })
+        cursor += timedelta(days=7)
+
+    if format:
+        # RBAC §2.2(f): the export is exactly the set on screen, and the two
+        # things that decide that set (which year, which policy) are stamped
+        # into the file's own Filters block rather than left implicit.
+        filters_applied = {"financial_year": fy.label, "policy": policy.policy_name}
+        return await list_export.build_export(format, db, current_user, "Saturday Calendar", _SATURDAY_CALENDAR_COLUMNS, rows, filters_applied)
+
+    return [apply_field_masking(row, perms) for row in rows]
+
+
 # -------------------------------------------------------------- Pay Cycle
 pay_cycle_router = APIRouter(prefix="/masters/pay-cycles", tags=["masters"])
 
@@ -429,10 +623,12 @@ async def list_saturday_overrides(
     rows = list((await db.execute(select(SaturdayOverride))).scalars().all())
 
     if format:
-        # Masters §3.20 Screen Design names "Export Calendar" explicitly as a
-        # Saturday Calendar row action — this list has no query filters of
-        # its own, so filters_applied is empty (build_export still stamps the
-        # result count / exported-by / exported-at block).
+        # Titled "Saturday Overrides", not "Saturday Calendar": §3.20's own
+        # "Export Calendar" is list_saturday_calendar's fifty-two-row export,
+        # and two files claiming the same name would be worse than either. This
+        # list has no query filters of its own, so filters_applied is empty
+        # (build_export still stamps the result count / exported-by /
+        # exported-at block).
         export_rows = [
             {
                 "saturday_date": o.saturday_date, "pattern_says": o.pattern_says, "override_to": o.override_to,
@@ -441,7 +637,7 @@ async def list_saturday_overrides(
             }
             for o in rows
         ]
-        return await list_export.build_export(format, db, current_user, "Saturday Calendar", _SATURDAY_LIST_COLUMNS, export_rows, {})
+        return await list_export.build_export(format, db, current_user, "Saturday Overrides", _SATURDAY_LIST_COLUMNS, export_rows, {})
 
     return [apply_field_masking(SaturdayOverrideOut.model_validate(o).model_dump(), perms) for o in rows]
 

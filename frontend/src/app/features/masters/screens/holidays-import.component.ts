@@ -6,8 +6,22 @@ import { Router } from '@angular/router';
 import { environment } from '../../../../environments/environment';
 import { PolicyStore } from '../../../core/rbac/policy.store';
 import { RefDataService } from '../../../shared/screens/ref-data.service';
+import { HolidayRow } from '../masters.api';
 
 const FY_REF = { endpoint: '/masters/financial-years/options', labelKey: 'label' };
+
+/** Shown in the "Expected CSV Format" card AND handed to the Download Sample
+ * CSV button, so the file a user downloads can never drift from the format
+ * the page documents. Rows lifted from the prototype's own sample
+ * (app-forms.js:60). */
+const SAMPLE_CSV = `Holiday Name,Date,Type,Recurring
+Republic Day,26-01-2027,Mandatory,Yes
+Holi,14-03-2027,Mandatory,No
+Good Friday,03-04-2027,Optional,No
+Independence Day,15-08-2027,Mandatory,Yes
+Gandhi Jayanti,02-10-2027,Mandatory,Yes
+Diwali,20-10-2027,Mandatory,No
+Christmas,25-12-2026,Optional,Yes`;
 
 type HolidayTypeChoice = 'MANDATORY' | 'OPTIONAL' | 'MIXED';
 
@@ -30,6 +44,17 @@ interface ImportResult {
  * none of the 14 generic shapes handle "parse an uploaded file client-side"
  * (see MASTERS-COMPLETION-PROMPT.md §2). Routed directly in masters.routes.ts
  * rather than through screenRoute()/ScreenHostComponent, for the same reason.
+ *
+ * Being routed directly is also why this file re-implements two things
+ * ScreenHostComponent would otherwise have supplied: the RBAC gate on the
+ * 'import' action (masters.routes.ts's canMatch only checks that the screen is
+ * OPENABLE, and masters.holidays is openable read-only by all five roles —
+ * seed.py SCREEN_PERMISSIONS), and the house form markup
+ * (.field > label + .input + .hint, and the .toggle switch), which the form
+ * shapes get from form-screen.component.ts. Both were missing: every control
+ * here rendered with a .cell-sub caption instead of a real <label>, which left
+ * it both visually unlike every other form in the app and unnamed to a screen
+ * reader.
  *
  * CSV only for now — not .xlsx/.xls. The obvious library (SheetJS's `xlsx`)
  * ships two unpatched high-severity vulnerabilities (prototype pollution,
@@ -56,6 +81,10 @@ interface ImportResult {
       </div>
     </div>
 
+    <!-- result() first because Angular allows the "as" alias only on a chain's
+         PRIMARY @if. Harmless as an ordering: result() is only ever set by a
+         successful POST, which a role without the import grant can never
+         reach. -->
     @if (result(); as r) {
       <div class="card" style="margin-bottom: 16px;">
         <div class="card-body">
@@ -66,73 +95,160 @@ interface ImportResult {
           </div>
         </div>
       </div>
+    } @else if (!canImport()) {
+      <!-- §3.0 Role Access: bulk import is Super Admin + Manager only, and the
+           Bulk Import button on the calendar is already gated on the same
+           'import' action. This is the deep-link path — HR, Accountant and
+           Employee can OPEN masters.holidays (read-only), so the route guard
+           lets them in and only this check stops them being shown a live form
+           whose Import button the API would then 403. -->
+      <div class="card">
+        <div class="card-body">
+          <div class="rbac-note">
+            <div>
+              You have view-only access to the Holidays calendar, so you cannot bulk import holidays.
+              Importing is available to Super Admin and Manager only (Masters §3.5).
+            </div>
+          </div>
+          <div class="page-actions" style="margin-top: 12px;">
+            <button class="btn primary" type="button" (click)="back()">Back to Calendar</button>
+          </div>
+        </div>
+      </div>
     } @else {
       <div class="card" style="margin-bottom: 16px;">
         <div class="card-head"><h3>Upload File</h3></div>
         <div class="card-body">
           <div class="grid g-2">
-            <div>
-              <div class="cell-sub" style="margin-bottom: 2px;">Financial Year *</div>
-              <select class="input" [(ngModel)]="financialYearId">
+            <div class="field">
+              <label for="hi-fy">Financial Year <span class="req" aria-hidden="true">*</span></label>
+              <select
+                id="hi-fy"
+                class="input"
+                aria-label="Financial Year"
+                aria-required="true"
+                [(ngModel)]="financialYearId"
+              >
                 <option [ngValue]="null">—</option>
                 @for (opt of fyOptions(); track opt.id) {
                   <option [ngValue]="opt.id">{{ opt.label }}</option>
                 }
               </select>
-              <div class="cell-sub" style="margin-top: 4px;">All imported holidays will be linked to this financial year. Dates outside the year range will be rejected.</div>
+              <div class="hint">All imported holidays will be linked to this financial year. Dates outside the year range will be rejected.</div>
             </div>
-            <div>
-              <div class="cell-sub" style="margin-bottom: 2px;">Holiday Type *</div>
-              <select class="input" [(ngModel)]="typeChoice" (ngModelChange)="reparse()">
+
+            <div class="field">
+              <label for="hi-type">Holiday Type <span class="req" aria-hidden="true">*</span></label>
+              <select
+                id="hi-type"
+                class="input"
+                aria-label="Holiday Type"
+                aria-required="true"
+                [(ngModel)]="typeChoice"
+                (ngModelChange)="reparse()"
+              >
                 <option value="MANDATORY">Mandatory</option>
                 <option value="OPTIONAL">Optional</option>
                 <option value="MIXED">Mixed — use Type column in file</option>
               </select>
-              <div class="cell-sub" style="margin-top: 4px;">Choose Mandatory or Optional to apply one type to all rows. Choose Mixed to read the Type column from your file.</div>
+              <div class="hint">Choose Mandatory or Optional to apply one type to all rows. Choose Mixed to read the Type column from your file.</div>
             </div>
-            <div>
-              <div class="cell-sub" style="margin-bottom: 2px;">File *</div>
-              <input class="input" type="file" accept=".csv,text/csv" (change)="onFileSelected($any($event.target).files)" />
-              <div class="cell-sub" style="margin-top: 4px;">Accepted format: .csv — maximum 500 rows per import. (.xlsx/.xls not yet supported — see the note in this screen's source.)</div>
+
+            <div class="field">
+              <!-- Same hidden-native-input + labelled-button shape
+                   form-screen.component.ts uses for its own 'file' fields: a
+                   raw <input type="file"> carries browser-drawn chrome that
+                   .input cannot style, so it never matches the controls beside
+                   it. aria-label is set explicitly for the same reason it is on
+                   every control there — two <label for>s legally point at this
+                   input, and the announced name should be exactly "File". -->
+              <label for="hi-file">File <span class="req" aria-hidden="true">*</span></label>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                @if (fileName(); as fn) {
+                  <span class="badge-s b-ok">{{ fn }}</span>
+                } @else {
+                  <span class="cell-sub">No file chosen.</span>
+                }
+                <!-- .btn, not .btn.ghost (which form-screen's own file field
+                     uses): ghost is transparent on both background and border,
+                     which reads as bold text rather than a control. On that
+                     screen the field is one of twenty and the upload is
+                     optional; here it is the single action the whole screen
+                     depends on, so it has to look pressable. -->
+                <label class="btn sm" for="hi-file" style="cursor: pointer; margin: 0;">{{ fileName() ? 'Replace file' : 'Choose CSV' }}</label>
+                <input
+                  id="hi-file"
+                  type="file"
+                  aria-label="File"
+                  style="display: none;"
+                  accept=".csv,text/csv"
+                  (change)="onFileSelected($any($event.target).files)"
+                />
+              </div>
+              <div class="hint">Accepted format: .csv — maximum 500 rows per import. (.xlsx/.xls not yet supported — see the note in this screen's source.)</div>
             </div>
-            <div>
-              <div class="cell-sub" style="margin-bottom: 2px;">Skip Duplicates</div>
-              <label style="display: inline-flex; align-items: center; gap: 6px;">
-                <input type="checkbox" [(ngModel)]="skipDuplicates" />
-                Yes — skip any date already in the calendar (recommended)
-              </label>
-              <div class="cell-sub" style="margin-top: 4px;">If off, importing a date that already exists overwrites the existing holiday's name, type and recurring flag.</div>
+
+            <div class="field">
+              <!-- A <span> is not labelable, so the <label> above carries no
+                   for-attribute and names this through aria-labelledby
+                   instead — the same reasoning (and the same keyboard
+                   handlers) as form-screen.component.ts's own checkbox shape. -->
+              <label id="hi-skip-label">Skip Duplicates</label>
+              <span
+                class="toggle"
+                role="switch"
+                tabindex="0"
+                [attr.aria-checked]="skipDuplicates"
+                aria-labelledby="hi-skip-label"
+                [class.on]="skipDuplicates"
+                (click)="skipDuplicates = !skipDuplicates"
+                (keydown.enter)="skipDuplicates = !skipDuplicates"
+                (keydown.space)="$event.preventDefault(); skipDuplicates = !skipDuplicates"
+              >
+                <span class="track"></span>
+                <span class="tl">Yes — skip any date already in the calendar (recommended)</span>
+              </span>
+              <div class="hint">If off, importing a date that already exists overwrites the existing holiday's name, type and recurring flag.</div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-bottom: 16px;">
-        <div class="card-head"><h3>Expected CSV Format</h3></div>
+        <div class="card-head">
+          <h3>Expected CSV Format</h3>
+          <div class="right">
+            <button class="btn sm ghost" type="button" (click)="downloadSample()">Download Sample CSV</button>
+          </div>
+        </div>
         <div class="card-body">
           <div class="grid g-2">
-            <div>
-              <div class="cell-sub">Required columns</div>
-              <div>Holiday Name, Date</div>
-              <div class="cell-sub" style="margin-top: 4px;">Column headers must match exactly (case-insensitive)</div>
+            <div class="field">
+              <label>Required columns</label>
+              <div class="readonly-value">Holiday Name, Date</div>
+              <div class="hint">Column headers must match exactly (case-insensitive)</div>
             </div>
-            <div>
-              <div class="cell-sub">Optional columns</div>
-              <div>Type, Recurring</div>
-              <div class="cell-sub" style="margin-top: 4px;">Type values: Mandatory or Optional. Recurring values: Yes or No</div>
+            <div class="field">
+              <label>Optional columns</label>
+              <div class="readonly-value">Type, Recurring</div>
+              <div class="hint">Type values: Mandatory or Optional. Recurring values: Yes or No</div>
             </div>
-            <div>
-              <div class="cell-sub">Date format</div>
-              <div>dd-mm-yyyy</div>
-              <div class="cell-sub" style="margin-top: 4px;">Example: 15-08-2026 for Independence Day</div>
+            <div class="field">
+              <label>Date format</label>
+              <div class="readonly-value mono">dd-mm-yyyy</div>
+              <div class="hint">Example: 15-08-2026 for Independence Day</div>
             </div>
-          </div>
-          <div style="margin-top: 12px;">
-            <div class="cell-sub" style="margin-bottom: 4px;">Sample CSV</div>
-            <pre class="mono" style="background: var(--surface-2, #f5f5f5); padding: 10px; border-radius: var(--r-md); font-size: 12px; overflow-x: auto;">Holiday Name,Date,Type,Recurring
-Republic Day,26-01-2027,Mandatory,Yes
-Holi,14-03-2027,Mandatory,No
-Good Friday,03-04-2027,Optional,No</pre>
+            <div class="field span-2">
+              <label>Sample CSV</label>
+              <!-- var(--surface-2) does not exist in tokens.css, so this block
+                   used to fall through to a hardcoded #f5f5f5 — light grey
+                   under light text in dark mode. Real tokens only. -->
+              <pre
+                class="mono"
+                style="background: var(--surface-sunk); color: var(--text-primary); border: 1px solid var(--hairline); padding: 10px; border-radius: var(--r-md); font-size: 12px; overflow-x: auto; margin: 0;"
+              >{{ sampleCsv }}</pre>
+              <div class="hint">Copy this format into a spreadsheet and save as .csv — one holiday per row, no blank rows between them.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -152,32 +268,45 @@ Good Friday,03-04-2027,Optional,No</pre>
         <div class="card" style="margin-bottom: 16px;">
           <div class="card-head">
             <h3>Preview — {{ parsedRows().length }} row(s) ready</h3>
+            <span class="sub">{{ summaryLine() }}</span>
           </div>
-          <div class="card-body table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Holiday Name</th>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Recurring</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of parsedRows().slice(0, 10); track row.displayDate + row.name) {
+          <div class="card-body flush">
+            <div class="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td class="cell-strong">{{ row.name }}</td>
-                    <td class="mono">{{ row.displayDate }}</td>
-                    <td>{{ row.holiday_type === 'MANDATORY' ? 'Mandatory' : 'Optional' }}</td>
-                    <td>{{ row.recurring_every_year ? 'Yes' : 'No' }}</td>
+                    <th>Holiday Name</th>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Recurring</th>
+                    <th>Against the calendar</th>
                   </tr>
-                }
-              </tbody>
-            </table>
-            @if (parsedRows().length > 10) {
-              <p class="cell-sub" style="margin: 8px 0 0;">…and {{ parsedRows().length - 10 }} more row(s).</p>
-            }
+                </thead>
+                <tbody>
+                  @for (row of previewRows(); track row.displayDate + row.name) {
+                    <tr>
+                      <td class="cell-strong">{{ row.name }}</td>
+                      <td class="mono">{{ row.displayDate }}</td>
+                      <td>{{ row.holiday_type === 'MANDATORY' ? 'Mandatory' : 'Optional' }}</td>
+                      <td>{{ row.recurring_every_year ? 'Yes' : 'No' }}</td>
+                      <td>
+                        @if (isDuplicate(row)) {
+                          <span class="badge-s b-warn">{{ skipDuplicates ? 'Duplicate — will be skipped' : 'Duplicate — will be overwritten' }}</span>
+                        } @else {
+                          <span class="badge-s b-ok">New</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           </div>
+          @if (parsedRows().length > previewRows().length) {
+            <div class="card-foot">
+              <span class="hint">Showing the first {{ previewRows().length }} of {{ parsedRows().length }} row(s). The counts above cover all of them.</span>
+            </div>
+          }
         </div>
       }
 
@@ -211,13 +340,46 @@ export class HolidaysImportComponent {
   protected financialYearId: string | null = null;
   protected typeChoice: HolidayTypeChoice = 'MANDATORY';
   protected skipDuplicates = true;
+  protected readonly sampleCsv = SAMPLE_CSV;
 
   protected readonly parsedRows = signal<ParsedRow[]>([]);
   protected readonly parseErrors = signal<string[]>([]);
   protected readonly submitting = signal(false);
   protected readonly submitError = signal<string | null>(null);
   protected readonly result = signal<ImportResult | null>(null);
+  protected readonly fileName = signal<string | null>(null);
+  /** `${financial_year_id}|${yyyy-mm-dd}` for every holiday already in the
+   * calendar — §3.5's "flags any duplicate dates found against the existing
+   * list", which this screen previously never checked (it only caught a date
+   * repeated twice inside the uploaded file). Keyed exactly the way
+   * masters_simple.py's import endpoint keys its own duplicate check, so the
+   * preview and the server agree on what a duplicate is. */
+  private readonly existingKeys = signal<ReadonlySet<string>>(new Set<string>());
   private rawText: string | null = null;
+
+  constructor() {
+    // include_inactive: the server's duplicate check spans every holiday in
+    // the year regardless of status, so a preview that only looked at Active
+    // rows would under-report and promise an import the server then skips.
+    if (this.canImport()) {
+      this.http.get<HolidayRow[]>(`${environment.apiBaseUrl}/masters/holidays?include_inactive=true`).subscribe({
+        next: (rows) =>
+          this.existingKeys.set(new Set((rows ?? []).map((h) => `${h.financial_year_id}|${String(h.holiday_date).slice(0, 10)}`))),
+        // Degrade to "no duplicates known" rather than blocking the import —
+        // the server still enforces skip/overwrite either way.
+        error: () => this.existingKeys.set(new Set<string>()),
+      });
+    }
+  }
+
+  /** §3.5 Role Access: "Super Admin: full CRUD (add, edit, bulk import,
+   * delete/deactivate). Manager: add, edit, and bulk import only." Gated on
+   * the same 'import' RBAC action the endpoint itself requires
+   * (masters_simple.py's require_screen("masters.holidays", action="import")),
+   * so this can never drift from what the API allows. */
+  protected canImport(): boolean {
+    return this.policy.can('masters.holidays', 'import');
+  }
 
   protected fyOptions(): { id: string; label: string }[] {
     return this.refData.options(FY_REF) ?? [];
@@ -227,10 +389,33 @@ export class HolidaysImportComponent {
     return !!this.financialYearId && this.parsedRows().length > 0 && this.parseErrors().length === 0;
   }
 
+  /** Capped preview — the summary counts below always cover the whole file. */
+  protected previewRows(): ParsedRow[] {
+    return this.parsedRows().slice(0, 10);
+  }
+
+  protected isDuplicate(row: ParsedRow): boolean {
+    const fy = this.financialYearId;
+    return !!fy && this.existingKeys().has(`${fy}|${row.holiday_date}`);
+  }
+
+  protected duplicateRows(): ParsedRow[] {
+    return this.parsedRows().filter((r) => this.isDuplicate(r));
+  }
+
+  protected summaryLine(): string {
+    if (!this.financialYearId) return 'Choose a financial year to check these dates against the existing calendar.';
+    const dupes = this.duplicateRows().length;
+    const total = this.parsedRows().length;
+    if (!dupes) return `${total} new — no duplicate dates in this financial year.`;
+    return `${total - dupes} new, ${dupes} duplicate date(s) — ${this.skipDuplicates ? 'skipped' : 'overwritten'}.`;
+  }
+
   protected onFileSelected(files: FileList | null): void {
     const file = files?.[0];
     this.result.set(null);
     this.submitError.set(null);
+    this.fileName.set(file?.name ?? null);
     if (!file) {
       this.rawText = null;
       this.parsedRows.set([]);
@@ -256,6 +441,21 @@ export class HolidaysImportComponent {
    * as a valid row without the user having to re-select the file. */
   protected reparse(): void {
     if (this.rawText !== null) this.parseCsv(this.rawText);
+  }
+
+  /** The sample the "Expected CSV Format" card already prints, as a file —
+   * the prototype's own second button on this form (app-forms.js:64,
+   * "Download Sample CSV"). */
+  protected downloadSample(): void {
+    const blob = new Blob([SAMPLE_CSV], { type: 'text/csv;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = 'holidays-sample.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
   }
 
   private parseCsv(text: string): void {
@@ -335,6 +535,14 @@ export class HolidaysImportComponent {
   protected submit(): void {
     const fyId = this.financialYearId;
     if (!fyId || !this.canSubmit()) return;
+
+    // §3.5: "Before an import is confirmed, a summary pop-up shows how many
+    // holidays will be added and flags any duplicate dates found against the
+    // existing list." The preview table shows this per-row; this is the
+    // confirmation step the spec asks for, and it is the last point at which
+    // Skip Duplicates can still be changed.
+    if (!window.confirm(this.confirmMessage())) return;
+
     this.submitting.set(true);
     this.submitError.set(null);
     const body = this.parsedRows().map((r) => ({
@@ -350,12 +558,42 @@ export class HolidaysImportComponent {
         next: (res) => {
           this.submitting.set(false);
           this.result.set(res);
+          // The calendar changed under us — refresh the duplicate set so a
+          // second import in the same visit is checked against reality.
+          this.http.get<HolidayRow[]>(`${environment.apiBaseUrl}/masters/holidays?include_inactive=true`).subscribe({
+            next: (rows) =>
+              this.existingKeys.set(new Set((rows ?? []).map((h) => `${h.financial_year_id}|${String(h.holiday_date).slice(0, 10)}`))),
+            error: () => undefined,
+          });
         },
         error: (err) => {
           this.submitting.set(false);
           this.submitError.set(err?.error?.detail ?? 'Import failed.');
         },
       });
+  }
+
+  private confirmMessage(): string {
+    const total = this.parsedRows().length;
+    const dupes = this.duplicateRows();
+    const fyLabel = this.fyOptions().find((o) => o.id === this.financialYearId)?.label ?? 'the selected financial year';
+    const lines = [`${total - dupes.length} holiday(s) will be added to ${fyLabel}.`];
+    if (dupes.length) {
+      // Naming the actual dates matters more than the count — "3 duplicates"
+      // is not something a user can check against their own file.
+      const shown = dupes.slice(0, 8).map((d) => d.displayDate).join(', ');
+      const more = dupes.length > 8 ? `, and ${dupes.length - 8} more` : '';
+      lines.push(
+        `${dupes.length} date(s) are already in this calendar: ${shown}${more}.`,
+        this.skipDuplicates
+          ? 'Skip Duplicates is ON, so these rows will be left exactly as they are.'
+          : "Skip Duplicates is OFF, so these existing holidays' name, type and recurring flag will be OVERWRITTEN.",
+      );
+    } else {
+      lines.push('No duplicate dates were found against the existing calendar.');
+    }
+    lines.push('Import now?');
+    return lines.join('\n\n');
   }
 
   protected back(): void {

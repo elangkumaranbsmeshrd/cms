@@ -31,7 +31,10 @@ const config: FormScreenConfig<DepartmentRow> = {
       key: 'code',
       label: 'Department Code',
       placeholder: 'e.g. ENG',
-      hint: 'Short code',
+      // ux_departments_code is UNIQUE in the schema, exactly like the sibling
+      // lookups' own Code fields — the hint said only "Short code", so a
+      // clashing code came back as a bare 409 the user had no warning about.
+      hint: 'Short code. Must be unique if set.',
     },
     {
       key: 'description',

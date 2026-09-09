@@ -1,15 +1,16 @@
 import { ListScreenConfig } from '../../../shared/screens/screen.types';
 import { ExpenseTypeRow } from '../masters.api';
 
-// `usage_count` really is on every row of the live response: masters_simple.py
-// passes it (with claim_type_changed_at / previous_claim_type) as one of the
-// factory's `read_only_fields`, and masters_lookup.py folds read_only_fields
-// into the generated `out_schema`. ExpenseTypeRow in masters.api.ts doesn't
-// declare it yet (that file belongs to another owner this pass), so it's
-// declared locally instead of dropped — without it the prototype's "Used"
-// column and its "Used — Any" filter would have no honest source and would
-// have had to be skipped.
-type ExpenseTypeListRow = ExpenseTypeRow & { usage_count?: number };
+// `is_referenced` really is on every row of the live response: this
+// sub-master registers `referenced_by=[(ExpenseClaim, 'expense_type_id'),
+// (CompanyExpense, 'expense_type_id')]` (masters_simple.py:106), which is
+// what turns the field on in the factory's generated `out_schema`
+// (masters_lookup.py:316). ExpenseTypeRow in masters.api.ts declares the
+// three `read_only_fields` but not this one (that file is shared by every
+// Masters screen and belongs to another owner this pass), so it's declared
+// locally rather than dropped — without it the "Used" column and its
+// "Used — Any" filter have no truthful source.
+type ExpenseTypeListRow = ExpenseTypeRow & { is_referenced?: boolean };
 
 // Masters §3.3's own wording. The backend stores the raw enum
 // (REIMBURSABLE | COMPANY_PAID — masters_simple.py:64), so the same list backs
@@ -20,11 +21,23 @@ const CLAIM_TYPE_OPTIONS = [
   { value: 'COMPANY_PAID', label: 'Company-Paid' },
 ];
 
-/** §3.3 "Used" — the count is server-computed and never caller-writable, so a
- * non-zero value is the only trustworthy statement that an Expense record
- * already references this type. Absent/0 both read as "not used yet". */
+/** §3.3 "Used" — answered by `is_referenced`, a live query against the two
+ * tables that really carry an `expense_type_id` (masters_lookup.py's
+ * `_referenced_ids`), NOT by the `usage_count` column this column and filter
+ * used to read.
+ *
+ * `usage_count` is a stored counter that nothing in this codebase ever
+ * increments — grep `usage_count` across app/: ExpenseType's copy is declared
+ * (models/masters.py:64), exposed as a read-only field, and left at 0 forever,
+ * because the increment would have to happen in the CONSUMING module and never
+ * was written. The visible consequence was concrete: "Travel" is named by 5
+ * expense_claims rows, yet the list showed Used = No and therefore offered a
+ * Delete button the database's ON DELETE RESTRICT answers with a 409 — while
+ * the PDF/Excel export of the very same screen printed Used = Yes for it,
+ * since masters_lookup.py:417 has always built the export column from
+ * `is_referenced`. Screen and export now agree, and both are right. */
 function isUsed(row: ExpenseTypeListRow): boolean {
-  return Number(row.usage_count ?? 0) > 0;
+  return !!row.is_referenced;
 }
 
 const config: ListScreenConfig<ExpenseTypeListRow> = {
@@ -74,28 +87,35 @@ const config: ListScreenConfig<ExpenseTypeListRow> = {
       predicate: (row, v) => (v === 'yes' ? !!row.is_recurring : !row.is_recurring),
     },
     {
-      // Client transport: masters_lookup.py's own docstring says Used/Unused
-      // "is still deferred" server-side. It's answerable here only because
-      // usage_count rides along on the response.
-      key: 'used',
+      // Server transport, same as Payment Mode's. `?is_referenced=` is a real,
+      // APPLIED query param on this endpoint (masters_lookup.py:371, :405-406)
+      // — it is only inert on lookups registered without `referenced_by`, and
+      // this one passes both of its real FK consumers. Filtering server-side
+      // also makes the export exact: `?format=pdf|excel` re-runs the same
+      // filter rather than exporting rows the screen had already hidden.
+      key: 'is_referenced',
       label: 'Used',
       kind: 'tristate',
-      transport: 'client',
+      transport: 'server',
+      param: 'is_referenced',
       allLabel: 'Used — Any',
-      predicate: (row, v) => (v === 'yes' ? isUsed(row) : !isUsed(row)),
     },
   ],
   columns: [
     { key: 'name', header: 'Expense Type', cellClass: 'cell-strong' },
     { key: 'short_code', header: 'Code', type: 'code' },
-    // The prototype renders Claim Type as a `chip` (app-core.js:236 — a plain
-    // neutral badge). ColumnType has no 'chip', and 'status' with an enum that
-    // isn't in the badge map produces exactly that neutral badge, so this is
-    // the closest honest match rather than bare text.
-    { key: 'claim_type', header: 'Claim Type', type: 'status', staticOptions: CLAIM_TYPE_OPTIONS },
+    // The prototype's own column type for this one (data.js:1513 —
+    // `{ k: 'kind', t: 'Claim Type', type: 'chip' }`). ColumnType gained
+    // 'chip' since this config was first written, and it is a different thing
+    // from 'status': the chip renders `badge-s b-neutral plain`, whose CSS
+    // suppresses the leading status dot (components.css:335) precisely because
+    // Reimbursable/Company-Paid is a classification, not a state to watch.
+    // staticOptions still map the raw enum to its label (list-screen's
+    // display() applies them for every column type).
+    { key: 'claim_type', header: 'Claim Type', type: 'chip', staticOptions: CLAIM_TYPE_OPTIONS },
     { key: 'is_recurring', header: 'Recurring', type: 'status' },
     { key: 'is_active', header: 'Status', type: 'status', compute: (row) => (row.is_active ? 'Active' : 'Inactive') },
-    { key: 'usage_count', header: 'Used', type: 'status', compute: isUsed },
+    { key: 'is_referenced', header: 'Used', type: 'status' },
   ],
   // §3.0 rule 1 / §3.3 Role Access: "Manager: add and edit only — delete/
   // deactivate stays with Super Admin". Both actions are gated on the same
@@ -120,9 +140,11 @@ const config: ListScreenConfig<ExpenseTypeListRow> = {
     },
     {
       // §3.3 Status & Deletion Rule: "Never hard-deleted once used on any
-      // Expense record" — so the button only appears while usage_count is 0.
-      // The database's ON DELETE RESTRICT keys are still the real guard (a
-      // referenced row comes back as a 409, not a 500).
+      // Expense record" — so the button only appears while nothing references
+      // the row. Now that isUsed() reads `is_referenced` rather than the dead
+      // `usage_count` counter, this genuinely predicts whether the DELETE will
+      // succeed; the database's ON DELETE RESTRICT keys are still the real
+      // guard (a referenced row comes back as a 409, not a 500).
       label: 'Delete',
       method: 'DELETE',
       endpoint: (row) => `/masters/expense-types/${row.id}`,
